@@ -72,7 +72,7 @@ Register a global chat event listener:
 chatClient.addEventListener { event ->
     when (event) {
         is MessageEvent.Received -> showMessage(event.message)
-        is StateEvent.Typing -> showTyping(event.userId)
+        is StateEvent.Typing -> showTyping(event.contactId)
     }
 }
 ```
@@ -105,8 +105,8 @@ Send a message to a dialog:
 val options = MessageOptions(text = "Hello")
 
 dialog.sendMessage(options) { result ->
-    result.onSuccess { message ->
-        markAsSent(message.id)
+    result.onSuccess { messageId ->
+        markAsSent(messageId)
     }
 }
 ```

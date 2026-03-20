@@ -46,7 +46,7 @@ internal class HttpChatApiDelegate(
         const val DIALOGS_PATH = "api/v1/threads"
         const val CONTACTS_PATH = "api/v1/contacts"
         const val SEND_TEXT_PATH = "api/v1/messages/text"
-        const val REGISTER_DEVICE_PATH = "api/v1/auth/device"
+        const val REGISTER_DEVICE_PATH = "api/v1/auth/devices"
     }
 
 
@@ -247,10 +247,10 @@ internal class HttpChatApiDelegate(
 
             val httpRequest = Request.Builder()
                 .url(buildRegisterDeviceUrl())
-                .put(body)
+                .post(body)
                 .build()
-
             logger.debug(TAG, "registerDevice: $httpRequest")
+            logger.debug(TAG, "registerDevice: $json")
 
             httpClient.newCall(httpRequest).execute().use { response ->
                 val bodyString = response.body?.string()

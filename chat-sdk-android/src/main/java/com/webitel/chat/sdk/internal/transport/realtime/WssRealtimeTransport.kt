@@ -156,7 +156,8 @@ internal class WssRealtimeTransport(
         if (connectionState == ConnectionState.Connected) {
             logger.debug(TAG, "send new auth in stream; $token")
             socket?.send(JSONObject()
-                .put("token", token)
+                .put("x-webitel-access", token)
+                .put("x-webitel-client", clientContext.clientToken)
                 .toString()
             )
         }
