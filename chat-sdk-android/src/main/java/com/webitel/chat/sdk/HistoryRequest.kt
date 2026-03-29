@@ -20,20 +20,18 @@ data class HistoryCursor(
     /** Identifier of the reference message. */
     val messageId: String,
 
-    /** Timestamp of the reference message. */
-    val createdAt: Long,
-
     /** Direction in which history should be loaded. */
-    val direction: MoveDirection = MoveDirection.BEFORE
+    val direction: MoveDirection = MoveDirection.OLDER
 )
 
 /**
  * Direction used when navigating message history.
  */
 enum class MoveDirection {
-    /** Load messages that were sent before the cursor. */
-    BEFORE,
 
-    /** Load messages that were sent after the cursor. */
-    AFTER
+    /** Load messages that are older than the cursor. */
+    OLDER,
+
+    /** Load messages that are newer than the cursor. */
+    NEWER
 }

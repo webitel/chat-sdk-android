@@ -242,27 +242,6 @@ internal class WssRealtimeTransport(
     }
 
 
-    private fun parseContact(obj: JSONObject?): ContactDto? {
-        if (obj == null) return null
-
-        val id = obj.optString("id")
-            .takeIf { !it.isNullOrEmpty() } ?: return null
-        val iss = obj.optString("issuer")
-            .takeIf { !it.isNullOrEmpty() } ?: return null
-        val name = obj.optString("name", "unknown")
-        val source = obj.optString("type", iss)
-        val isBot = obj.optBoolean("is_bot")
-
-        return ContactDto(
-            id = id,
-            iss = iss,
-            name = name,
-            source = source,
-            isBot = isBot
-        )
-    }
-
-
     private fun parseNewDialog(payload: JSONObject?): DialogDto? {
         if (payload == null) return null
         val id = payload.optString("id")
@@ -291,25 +270,26 @@ internal class WssRealtimeTransport(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                mapContactInDialog(obj)?.let(::add)
+                parseContact(obj)?.let(::add)
             }
         }
 
+    private fun parseContact(obj: JSONObject?): ContactDto? {
+        if (obj == null) return null
 
-    private fun mapContactInDialog(memberObj: JSONObject): ContactDto? {
-        val id = memberObj.optString("sub")
-        val iss = memberObj.optString("iss")
-        val username = memberObj.optString("name")
-
-        if (id.isNullOrEmpty() || iss.isNullOrEmpty()) return null
-        val source = memberObj.optString("type", iss)
-        val isBot = memberObj.optBoolean("is_bot")
+        val id = obj.optString("sub")
+            .takeIf { !it.isNullOrEmpty() } ?: return null
+        val iss = obj.optString("iss")
+            .takeIf { !it.isNullOrEmpty() } ?: return null
+        val name = obj.optString("name", "unknown")
+        val source = obj.optString("type", iss)
+        val isBot = obj.optBoolean("is_bot")
 
         return ContactDto(
-            iss = iss,
-            source = source,
-            name = username,
             id = id,
+            iss = iss,
+            name = name,
+            source = source,
             isBot = isBot
         )
     }

@@ -297,6 +297,7 @@ internal class HttpChatApiDelegate(
             .addQueryParameter("fields", "id")
             .addQueryParameter("fields", "subject")
             .addQueryParameter("fields", "kind")
+            .addQueryParameter("fields", "last_msg")
             .apply {
                 if (clientContext.port > 0)
                     port(clientContext.port)
@@ -361,7 +362,7 @@ internal class HttpChatApiDelegate(
 
             val page = root.optInt("page", request.page)
             val hasNext = root.optBoolean("next", false)
-            val items = parseDialogsArray(root.optJSONArray("threads"))
+            val items = parseDialogsArray(root.optJSONArray("items"))
 
             Page(
                 page = page,
@@ -406,15 +407,14 @@ internal class HttpChatApiDelegate(
         return runCatching {
             val root = JSONObject(bodyString)
 
-            val items = parseMessagesArray(root.optJSONArray("messages")).let {
-                if (request.cursor?.direction == MoveDirection.AFTER) it else it.reversed()
-            }
-            val paging = parsePaging(root.optJSONObject("paging"))
+            val items = parseMessagesArray(root.optJSONArray("items"))
+                .reversed()
+            val paging = parsePaging(root)
 
             HistorySlice(
                 items = items,
-                beforeCursor = paging.component1(),
-                afterCursor = paging.component2()
+                newerCursor = paging.component1(),
+                olderCursor = paging.component2()
             )
         }.fold(
             onSuccess = { Result.success(it) },
@@ -425,27 +425,23 @@ internal class HttpChatApiDelegate(
 
     private fun parsePaging(obj: JSONObject?): Pair<HistoryCursor?, HistoryCursor?> {
         if (obj == null) return Pair(null, null)
-        val cursors = obj.optJSONObject("cursors")
-        val aftObj = cursors?.optJSONObject("after")
-        val befObj = cursors?.optJSONObject("before")
 
-        val before = parseCursor(befObj)
-        val after = parseCursor(aftObj)
-        return Pair(before, after)
+        val oldObj = obj.optJSONObject("next_cursor")
+        val newObj = obj.optJSONObject("prev_cursor")
+
+        val newer = parseCursor(newObj, MoveDirection.NEWER)
+        val older = parseCursor(oldObj, MoveDirection.OLDER)
+        return Pair(newer, older)
     }
 
 
-    private fun parseCursor(obj: JSONObject?): HistoryCursor? {
+    private fun parseCursor(obj: JSONObject?, direction: MoveDirection): HistoryCursor? {
         if (obj == null) return null
-        val createdAt = obj.optLong("created_at", 0)
-        val direction = obj.optBoolean("id", false)
         val id = obj.optString("id")
         if (id.isEmpty()) return null
         return HistoryCursor(
             id,
-            createdAt,
-            if (direction) MoveDirection.BEFORE
-            else MoveDirection.AFTER
+            direction
         )
     }
 
@@ -503,7 +499,7 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                mapContact(obj)?.let(::add)
+                parseContact(obj)?.let(::add)
             }
         }
 
@@ -515,7 +511,7 @@ internal class HttpChatApiDelegate(
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
                 val senderObj = obj.optJSONObject("sender")
-                mapMessage(obj, senderObj)?.let(::add)
+                parseMessage(obj, senderObj)?.let(::add)
             }
         }
 
@@ -526,7 +522,8 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                mapContactInDialog(obj)?.let(::add)
+                val memberObj = obj.optJSONObject("member") ?: continue
+                parseContact(memberObj)?.let(::add)
             }
         }
 
@@ -537,12 +534,12 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                mapDialog(obj)?.let(::add)
+                parseDialog(obj)?.let(::add)
             }
         }
 
 
-    private fun mapDialog(obj: JSONObject): DialogDto? {
+    private fun parseDialog(obj: JSONObject): DialogDto? {
         val id = obj.optString("id")
         if (id.isNullOrEmpty()) return null
 
@@ -551,28 +548,33 @@ internal class HttpChatApiDelegate(
 
         val members = parseContactsInDialogArray(obj.optJSONArray("members"))
 
+        val lastMsgObj = obj.optJSONObject("last_msg")
+        val senderObj = lastMsgObj?.optJSONObject("sender")
+        val lastMessage = parseMessage(lastMsgObj, senderObj)
+
         return DialogDto(
             id = id,
             subject = subject,
             type = type,
             members = members,
-            lastMessage = null
+            lastMessage = lastMessage
         )
     }
 
 
-    private fun mapContact(obj: JSONObject): ContactDto? {
-        val id = obj.optString("subject")
-        val iss = obj.optString("iss_id")
+    private fun parseContact(obj: JSONObject): ContactDto? {
+        val id = obj.optString("sub")
+        val iss = obj.optString("iss")
 
         if (id.isNullOrEmpty() || iss.isNullOrEmpty()) return null
 
+        val name = obj.optString("name", "unknown")
         val source = obj.optString("type", iss)
         val isBot = obj.optBoolean("is_bot")
 
         return ContactDto(
             iss = iss,
-            name = obj.optString("name", "unknown"),
+            name = name,
             id = id,
             source = source,
             isBot = isBot
@@ -580,9 +582,10 @@ internal class HttpChatApiDelegate(
     }
 
     
-    private fun mapMessage(messageObj: JSONObject?, fromObj: JSONObject?): MessageDto? {
+    private fun parseMessage(messageObj: JSONObject?, fromObj: JSONObject?): MessageDto? {
         messageObj ?: return null
         fromObj ?: return null
+        val sender = parseContact(fromObj) ?: return null
 
         val id = messageObj.optString("id")
 
@@ -594,51 +597,14 @@ internal class HttpChatApiDelegate(
         val text = messageObj.optString("body")
         val sendId = messageObj.optString("send_id").takeIf { it.isNotEmpty() }
 
-        val contactId = fromObj.optString("subject")
-        val iss = fromObj.optString("issuer")
-        val name = fromObj.optString("username").ifBlank { "unknown" }
-
-        val source = fromObj.optString("type", iss)
-        val isBot = fromObj.optBoolean("is_bot")
-
-        val from = ContactDto(
-            id = contactId,
-            iss = iss,
-            name = name,
-            source = source,
-            isBot = isBot
-        )
-
         return MessageDto(
             id = id,
             dialogId = dialogId,
             createdAt = createdAt,
             updatedAt = updatedAt,
-            from = from,
+            from = sender,
             text = text,
             sendId = sendId
-        )
-    }
-
-
-    private fun mapContactInDialog(obj: JSONObject): ContactDto? {
-        val memberObj = obj.optJSONObject("member") ?: return null
-
-        val id = memberObj.optString("subject")
-        val iss = memberObj.optString("issuer")
-        val username = memberObj.optString("username")
-
-        if (id.isNullOrEmpty() || iss.isNullOrEmpty()) return null
-
-        val source = memberObj.optString("type", iss)
-        val isBot = memberObj.optBoolean("is_bot")
-
-        return ContactDto(
-            iss = iss,
-            source = source,
-            name = username,
-            id = id,
-            isBot = isBot
         )
     }
 
@@ -658,10 +624,9 @@ internal class HttpChatApiDelegate(
             .apply {
                 request.cursor?.let { cursor ->
                     addQueryParameter("cursor.id", cursor.messageId)
-                    addQueryParameter("cursor.created_at", cursor.createdAt.toString())
                     addQueryParameter(
-                        "cursor.direction",
-                        if (cursor.direction == MoveDirection.BEFORE) "true" else "false"
+                        "cursor.before",
+                        if (cursor.direction == MoveDirection.NEWER) "true" else "false"
                     )
                 }
                 if (clientContext.port > 0)

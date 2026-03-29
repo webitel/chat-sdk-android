@@ -8,9 +8,9 @@ data class HistorySlice<T>(
     /** Items returned in this slice of history. */
     val items: List<T>,
 
-    /** Cursor to load items that come before this slice. */
-    val beforeCursor: HistoryCursor?,
+    /** Cursor used to load messages newer than this slice. */
+    val newerCursor: HistoryCursor?,
 
-    /** Cursor to load items that come after this slice. */
-    val afterCursor: HistoryCursor?
+    /** Cursor used to load messages older than this slice. */
+    val olderCursor: HistoryCursor?
 )

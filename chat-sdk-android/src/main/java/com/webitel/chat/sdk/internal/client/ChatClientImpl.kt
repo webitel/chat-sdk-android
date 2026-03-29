@@ -204,8 +204,8 @@ internal class ChatClientImpl(
                         val currentUserId = authManager.currentContact?.id
                         HistorySlice(
                             items = slice.items.map { it.toDomain(currentUserId) },
-                            beforeCursor = slice.beforeCursor,
-                            afterCursor = slice.afterCursor
+                            newerCursor = slice.newerCursor,
+                            olderCursor = slice.olderCursor
                         )
                     }
                     callback(mapped)
