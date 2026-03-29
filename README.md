@@ -1,7 +1,10 @@
 # Chat SDK for Android
 
-An Android SDK for realtime chat messaging with WebSocket support, session management, and flexible authentication. Designed to work seamlessly with both Java and Kotlin.
+Android SDK for realtime chat messaging with WebSocket transport, session management, push notifications, and flexible authentication.
 
+Designed to integrate easily with both **Java** and **Kotlin** applications.
+
+Documentation is available in the [/docs](./docs) directory.
 
 ---
 
