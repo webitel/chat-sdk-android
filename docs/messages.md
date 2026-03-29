@@ -100,11 +100,8 @@ data class HistoryCursor(
     /** Identifier of the reference message */
     val messageId: String,
 
-    /** Timestamp of the reference message */
-    val createdAt: Long,
-
     /** Direction of loading */
-    val direction: MoveDirection = MoveDirection.BEFORE
+    val direction: MoveDirection = MoveDirection.OLDER
 )
 ```
 
@@ -113,27 +110,25 @@ data class HistoryCursor(
 
 ```kotlin
 data class HistorySlice<T>(
-
-    /** Messages in the current slice */
+    /** Items returned in this slice of history. */
     val items: List<T>,
 
-    /** Cursor for loading older messages */
-    val beforeCursor: HistoryCursor?,
+    /** Cursor used to load messages newer than this slice. */
+    val newerCursor: HistoryCursor?,
 
-    /** Cursor for loading newer messages */
-    val afterCursor: HistoryCursor?
+    /** Cursor used to load messages older than this slice. */
+    val olderCursor: HistoryCursor?
 )
 ```
 
-- `beforeCursor` — used to load older messages  
-- `afterCursor` — used to load newer messages  
+- `olderCursor` — used to load older messages  
+- `newerCursor` — used to load newer messages  
 
 
 ### Working with cursors
 
 Cursors can also be created manually. This is useful, for example, after reconnect:
-- take the last known message  
-- use its id and createdAt  
-- set direction to MoveDirection.AFTER  
+- take the last known message and use id   
+- set direction to MoveDirection.NEWER  
 
 This allows checking whether new messages after the connection was restored.
