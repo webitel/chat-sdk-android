@@ -16,7 +16,7 @@ ChatClient.builder(application, endpoint, clientToken)
 
 ## Required parameters
 
-- `endpoint` — server connection URL  
+- `endpoint` — server connection URL (e.g. `https://demo.webitel.com`)  
 - `clientToken` — client identifier generated on the server  
 - `auth` — authentication method  
 
