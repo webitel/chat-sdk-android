@@ -222,9 +222,9 @@ internal class WssRealtimeTransport(
             val updatedAt = payload.longOrNull("updated_at") ?: createdAt
             val sendId = payload.optString("send_id").takeIf { it.isNotEmpty() }
 
-            val from = parseContact(payload.optJSONObject("from")) ?: return null
+            val from = parseContact(payload.optJSONObject("sender")) ?: return null
 
-            val text = payload.optString("text")
+            val text = payload.optString("body")
 
             return MessageDto(
                 id = id,
