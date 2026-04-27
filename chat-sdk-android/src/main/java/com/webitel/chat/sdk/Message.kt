@@ -26,7 +26,7 @@ data class Message(
     val editedAt: Long?,
 
     /** Sender of the message */
-    val from: Contact,
+    val from: Participant,
 
     /**
      * Text content of the message.

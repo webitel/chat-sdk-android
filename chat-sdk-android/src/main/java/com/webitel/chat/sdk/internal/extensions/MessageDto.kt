@@ -6,7 +6,7 @@ import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 internal fun MessageDto.toDomain(currentUserId: String?): Message {
     val from = from.toDomain()
 
-    val isOutgoing = from.id.sub == currentUserId
+    val isOutgoing = from.contact.id.sub == currentUserId
 
     return Message(
         id = id,

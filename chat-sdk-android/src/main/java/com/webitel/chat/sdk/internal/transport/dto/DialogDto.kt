@@ -4,6 +4,6 @@ internal data class DialogDto(
     val id: String,
     val lastMessage: MessageDto?,
     val subject: String,
-    val members: List<ContactDto>,
+    val members: List<ParticipantDto>,
     val type: String,
 )

@@ -21,6 +21,7 @@ internal class ChatClientBuilder(
 ) : ChatClient.Builder {
 
     private val deviceInfoRepository = DeviceInfoRepository(
+        application,
         DeviceInfoStorageSharedPref(
             application
         )
@@ -71,7 +72,7 @@ internal class ChatClientBuilder(
             networkConfig,
             authMethod,
             deviceId ?: deviceInfoRepository.getDeviceId(),
-            deviceInfoRepository.getUserAgent(application),
+            deviceInfoRepository.getUserAgent(),
             pinnedPublicKeyHashes
         )
 

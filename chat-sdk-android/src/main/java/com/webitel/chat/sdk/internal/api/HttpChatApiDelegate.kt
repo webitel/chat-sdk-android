@@ -3,7 +3,9 @@ package com.webitel.chat.sdk.internal.api
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatError
 import com.webitel.chat.sdk.ContactRequest
+import com.webitel.chat.sdk.DialogFilter
 import com.webitel.chat.sdk.DialogRequest
+import com.webitel.chat.sdk.DialogType
 import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryCursor
 import com.webitel.chat.sdk.HistoryRequest
@@ -20,6 +22,7 @@ import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.http.OkHttpCancellable
 import com.webitel.chat.sdk.internal.transport.http.safeCall
 import okhttp3.Call
@@ -286,23 +289,70 @@ internal class HttpChatApiDelegate(
             .build()
 
 
-    private fun buildDialogsUrl(request: DialogRequest): HttpUrl =
-        HttpUrl.Builder()
+    private fun buildDialogsUrl(request: DialogRequest): HttpUrl {
+        return HttpUrl.Builder()
             .scheme(clientContext.scheme)
             .host(clientContext.host)
+            .apply {
+                if (clientContext.port > 0) {
+                    port(clientContext.port)
+                }
+            }
             .addPathSegments(DIALOGS_PATH)
             .addQueryParameter("page", request.page.toString())
             .addQueryParameter("size", request.size.toString())
-            .addQueryParameter("fields", "members")
-            .addQueryParameter("fields", "id")
-            .addQueryParameter("fields", "subject")
-            .addQueryParameter("fields", "kind")
-            .addQueryParameter("fields", "last_msg")
             .apply {
-                if (clientContext.port > 0)
-                    port(clientContext.port)
+                addFields()
+                request.filter?.let { addFilter(it) }
             }
             .build()
+    }
+
+
+    private fun HttpUrl.Builder.addFields() {
+        listOf(
+            "members",
+            "id",
+            "subject",
+            "kind",
+            "last_msg"
+        ).forEach {
+            addQueryParameter("fields", it)
+        }
+    }
+
+
+    private fun HttpUrl.Builder.addFilter(filter: DialogFilter) {
+        filter.query?.let {
+            addQueryParameter("q", it)
+        }
+
+        addArray("ids", filter.ids)
+
+        val types = filter.types
+            ?.mapNotNull { it.toApiKind() }
+            ?.map { it.toString() }
+
+        addArray("types", types)
+    }
+
+
+    private fun HttpUrl.Builder.addArray(
+        name: String,
+        values: List<String>?
+    ) {
+        values?.forEach {
+            addQueryParameter(name, it)
+        }
+    }
+
+
+    private fun DialogType.toApiKind(): Int? = when (this) {
+        DialogType.DIRECT -> 1
+        DialogType.GROUP -> 2
+        DialogType.CHANNEL -> 3
+        DialogType.UNKNOWN -> null
+    }
 
 
     private fun buildRegisterDeviceUrl(): HttpUrl =
@@ -498,8 +548,7 @@ internal class HttpChatApiDelegate(
             if (array == null) return@buildList
 
             for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                parseContact(obj)?.let(::add)
+                parseContact(array.optJSONObject(i))?.let(::add)
             }
         }
 
@@ -510,22 +559,40 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                val senderObj = obj.optJSONObject("sender")
-                parseMessage(obj, senderObj)?.let(::add)
+                parseMessage(obj)?.let(::add)
             }
         }
 
 
-    private fun parseContactsInDialogArray(array: JSONArray?): List<ContactDto> =
+    private fun parseParticipantArray(array: JSONArray?): List<ParticipantDto> =
         buildList {
             if (array == null) return@buildList
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                val memberObj = obj.optJSONObject("member") ?: continue
-                parseContact(memberObj)?.let(::add)
+                parseParticipant(obj)?.let(::add)
             }
         }
+
+
+    private fun parseParticipant(obj: JSONObject?): ParticipantDto? {
+        obj ?: return null
+
+        val id = obj.optString("id")
+        if (id.isNullOrEmpty() ) return null
+
+        val contact = parseContact(
+            obj.optJSONObject("contact")
+        ) ?: return null
+
+        val role = obj.optString("role", "ROLE_UNSPECIFIED")
+
+        return ParticipantDto(
+            id = id,
+            contact = contact,
+            role = role
+        )
+    }
 
 
     private fun parseDialogsArray(array: JSONArray?): List<DialogDto> =
@@ -544,13 +611,12 @@ internal class HttpChatApiDelegate(
         if (id.isNullOrEmpty()) return null
 
         val subject = obj.optString("subject")
-        val type = obj.optString("kind")
+        val type = obj.optString("type")
 
-        val members = parseContactsInDialogArray(obj.optJSONArray("members"))
+        val members = parseParticipantArray(obj.optJSONArray("members"))
 
         val lastMsgObj = obj.optJSONObject("last_msg")
-        val senderObj = lastMsgObj?.optJSONObject("sender")
-        val lastMessage = parseMessage(lastMsgObj, senderObj)
+        val lastMessage = parseMessage(lastMsgObj)
 
         return DialogDto(
             id = id,
@@ -562,7 +628,9 @@ internal class HttpChatApiDelegate(
     }
 
 
-    private fun parseContact(obj: JSONObject): ContactDto? {
+    private fun parseContact(obj: JSONObject?): ContactDto? {
+        obj ?: return null
+
         val id = obj.optString("sub")
         val iss = obj.optString("iss")
 
@@ -582,18 +650,18 @@ internal class HttpChatApiDelegate(
     }
 
     
-    private fun parseMessage(messageObj: JSONObject?, fromObj: JSONObject?): MessageDto? {
+    private fun parseMessage(messageObj: JSONObject?): MessageDto? {
         messageObj ?: return null
-        fromObj ?: return null
-        val sender = parseContact(fromObj) ?: return null
+        val sender = parseParticipant(
+            messageObj.optJSONObject("sender")
+        ) ?: return null
 
         val id = messageObj.optString("id")
-
         if (id.isNullOrEmpty()) return null
 
         val dialogId = messageObj.optString("thread_id")
         val createdAt = messageObj.optLong("created_at")
-        val updatedAt = messageObj.optLong("updated_at")
+        val updatedAt = messageObj.optLong("edited_at")
         val text = messageObj.optString("body")
         val sendId = messageObj.optString("send_id").takeIf { it.isNotEmpty() }
 

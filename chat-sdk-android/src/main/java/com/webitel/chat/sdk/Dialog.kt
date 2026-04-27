@@ -16,7 +16,7 @@ interface Dialog {
     val type: DialogType
 
     /** List of dialog participants. */
-    val members: List<Contact>
+    val members: List<Participant>
 
     /** Last message sent in the dialog, if available. */
     val lastMessage: Message?

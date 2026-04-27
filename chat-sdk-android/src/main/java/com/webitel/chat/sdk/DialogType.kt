@@ -11,6 +11,9 @@ enum class DialogType {
     /** Dialog with multiple participants. */
     GROUP,
 
+    /** Channel-style dialog (broadcast or topic based communication). */
+    CHANNEL,
+
     /** Unknown or unsupported dialog type. */
     UNKNOWN;
 

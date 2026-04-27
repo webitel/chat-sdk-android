@@ -29,6 +29,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    defaultConfig {
+        buildConfigField("String", "VERSION_NAME", "\"${getGitVersion()}\"")
+    }
     
     kotlinOptions {
         jvmTarget = "1.8"
@@ -53,7 +61,19 @@ afterEvaluate {
 
             groupId = "com.webitel"
             artifactId = "chat-sdk-android"
-            version = "0.0.1"
+            version = "0.1.1"
         }
+    }
+}
+
+
+fun getGitVersion(): String {
+    return try {
+        val process = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+            .redirectError(ProcessBuilder.Redirect.PIPE)
+            .start()
+        process.inputStream.bufferedReader().readText().trim()
+    } catch (e: Exception) {
+        "unknown"
     }
 }

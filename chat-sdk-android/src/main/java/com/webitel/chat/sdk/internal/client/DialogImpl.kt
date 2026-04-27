@@ -2,7 +2,6 @@ package com.webitel.chat.sdk.internal.client
 
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatEventListener
-import com.webitel.chat.sdk.Contact
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogType
 import com.webitel.chat.sdk.DownloadListener
@@ -11,6 +10,7 @@ import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
+import com.webitel.chat.sdk.Participant
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
@@ -20,7 +20,7 @@ internal class DialogImpl(
     private val hub: RealtimeHub,
     override val id: String,
     override val type: DialogType,
-    override var members: List<Contact>,
+    override var members: List<Participant>,
     private var snapshot: DialogDto
 ) : Dialog {
 

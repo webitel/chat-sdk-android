@@ -9,6 +9,7 @@ import com.webitel.chat.sdk.internal.extensions.longOrNull
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.http.HeaderInterceptor
 import com.webitel.chat.sdk.internal.transport.http.HeaderProvider
 import okhttp3.CertificatePinner
@@ -219,10 +220,10 @@ internal class WssRealtimeTransport(
                 return null
             }
             val createdAt = payload.longOrNull("created_at") ?: 0
-            val updatedAt = payload.longOrNull("updated_at") ?: createdAt
+            val updatedAt = payload.longOrNull("edited_at") ?: createdAt
             val sendId = payload.optString("send_id").takeIf { it.isNotEmpty() }
 
-            val from = parseContact(payload.optJSONObject("sender")) ?: return null
+            val from = parseParticipant(payload.optJSONObject("sender")) ?: return null
 
             val text = payload.optString("body")
 
@@ -242,6 +243,34 @@ internal class WssRealtimeTransport(
     }
 
 
+    private fun parseParticipantArray(array: JSONArray?): List<ParticipantDto> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                parseParticipant(obj)?.let(::add)
+            }
+        }
+
+
+    private fun parseParticipant(obj: JSONObject?): ParticipantDto? {
+        if (obj == null) return null
+        val id = obj.optString("id")
+        if (id.isNullOrEmpty() ) return null
+        val contactObj = obj.optJSONObject("contact") ?: return null
+        val contact = parseContact(contactObj) ?: return null
+
+        val role = obj.optString("role", "ROLE_UNSPECIFIED")
+
+        return ParticipantDto(
+            id = id,
+            contact = contact,
+            role = role
+        )
+    }
+
+
     private fun parseNewDialog(payload: JSONObject?): DialogDto? {
         if (payload == null) return null
         val id = payload.optString("id")
@@ -250,7 +279,7 @@ internal class WssRealtimeTransport(
         val subject = payload.optString("subject")
         val type = payload.optString("type")
 
-        val members = parseContactsInDialogArray(
+        val members = parseParticipantArray(
             payload.optJSONArray("members")
         )
 
@@ -263,16 +292,6 @@ internal class WssRealtimeTransport(
         )
     }
 
-
-    private fun parseContactsInDialogArray(array: JSONArray?): List<ContactDto> =
-        buildList {
-            if (array == null) return@buildList
-
-            for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                parseContact(obj)?.let(::add)
-            }
-        }
 
     private fun parseContact(obj: JSONObject?): ContactDto? {
         if (obj == null) return null

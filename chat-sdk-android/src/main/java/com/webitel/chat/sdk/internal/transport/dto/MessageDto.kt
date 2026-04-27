@@ -5,7 +5,7 @@ internal data class MessageDto(
     val dialogId: String,
     val createdAt: Long,
     val updatedAt: Long?,
-    val from: ContactDto,
+    val from: ParticipantDto,
     val sendId: String?,
     val text: String?
 )
