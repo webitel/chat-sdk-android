@@ -1,15 +1,17 @@
 # Dialogs
 
-Dialogs represent conversations.
+Dialogs represent conversations between users.
+
 
 ## Types
-- DIRECT  
-- GROUP  
+- DIRECT — One-to-one private dialog between two users.  
+- GROUP — Dialog with multiple participants.  
+- CHANNEL — Broadcast or topic-based dialog.  
 
 
 ## DIRECT behavior
 - Created automatically on first message  
-- One dialog per pair  
+- Only one dialog exists per pair of users  
 
 
 ## MessageTarget
@@ -44,7 +46,7 @@ interface Dialog {
     val type: DialogType
 
     /** List of dialog participants. */
-    val members: List<Contact>
+    val members: List<Participant>
 
     /** Last message sent in the dialog, if available. */
     val lastMessage: Message?
@@ -52,15 +54,65 @@ interface Dialog {
 ```
 
 
+## Participants
+
+Each dialog contains a list of participants (`members`).
+
+A participant represents a user **within the context of a specific dialog** and includes:
+
+- underlying contact information (`Contact`)
+- role in the dialog (e.g. OWNER, ADMIN, MEMBER)
+- a dialog-scoped identifier
+
+Important:
+
+- the same contact may have different roles in different dialogs
+- participant data should be used for permissions and UI logic
+- do not confuse `Participant` with `Contact` — they serve different purposes
+
+```kotlin
+
+data class Participant(
+  val id: String,
+  val contact: Contact,
+  val role: ParticipantRole
+)
+```
+
+
 ## Fetch dialogs
 
 ```kotlin
-val request = DialogRequest(page = 1, size = 50)
+val request = DialogRequest(
+    page = 1,
+    size = 50,
+    filter = DialogFilter(
+        query = "support",
+        types = listOf(DialogType.GROUP, DialogType.CHANNEL)
+    )
+)
 
 chatClient.getDialogs(request) { result -> }
 ```
 
 Returns: `Result<Page<Dialog>>`
+
+
+## Filtering
+
+DialogFilter allows narrowing the result set:  
+
+- query — full-text search query (up to 256 characters).  
+Performs a case-insensitive partial match (`ilike`) against:  
+    * `subject` for group/channel dialogs  
+    * `title` for direct dialogs  
+Matches both exact values and substrings anywhere in the text.  
+
+- ids — include only specific dialogs by ID  
+- types — filter by dialog types  
+    * UNKNOWN is ignored  
+
+If multiple filter fields are provided, they are combined (AND).  
 
 
 ## Pagination
@@ -72,3 +124,7 @@ data class Page<T>(
     val hasNext: Boolean
 )
 ```
+
+* page — current page number
+* items — list of dialogs
+* hasNext — indicates if more pages are available
