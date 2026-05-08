@@ -24,12 +24,73 @@ val target: MessageTarget = MessageTarget.Dialog("dialogId")
 // val target: MessageTarget = MessageTarget.Contact(ContactId(contactSUB, contactISS))
 
 val sendId = UUID.randomUUID().toString()
-val options = MessageOptions("text", sendId)
 
-requireChatClient.sendMessage(target, options) { result ->
+val options = MessageOptions(
+    content = SendContent.Text("Hello"),
+    sendId = sendId
+)
+
+chatClient.sendMessage(target, options) { result ->
     result
         .onSuccess { messageId -> }
         .onFailure { error -> }
+}
+```
+
+
+## Message Content
+
+The SDK uses two different content models depending on the direction of the message:
+
+- SendContent — used when sending messages  
+- MessageContent — used for messages received from the server  
+
+This separation exists because the server may enrich or transform messages before delivering them.
+
+
+### Sending content (SendContent)
+
+SendContent defines what the client is allowed to send.
+
+Supported types:
+
+- Text  
+- Attachments  
+- Composite (text + attachments)  
+- Contact  
+- Location  
+
+Example:
+```kotlin
+val content = SendContent.Composite(
+    text = "See attached file",
+    attachments = listOf(file)
+)
+```
+
+### Received content (MessageContent)
+
+MessageContent represents the final message as delivered by the server.
+
+It may include additional data not present in the original request.
+
+Supported types:
+
+- Text  
+- Attachments  
+- Composite  
+- Contact  
+- Location  
+- KeyboardOnly  
+- System  
+
+Example:
+
+```kotlin
+when (val content = message.content) {
+    is MessageContent.Text -> { /* ... */ }
+    is MessageContent.Composite -> { /* ... */ }
+    is MessageContent.System -> { /* ... */ }
 }
 ```
 
@@ -55,22 +116,17 @@ data class Message(
     val from: Participant,
 
     /**
-     * Text content of the message.
-     * May be null if the message contains only attachments.
+     * Message content.
+     *
+     * See [MessageContent] for all supported content types and combinations.
      */
-    val text: String?,
+    val content: MessageContent,
 
     /** Client-generated identifier for message tracking */
     val sendId: String? = null,
 
     /** Indicates whether the message is outgoing */
     val isOutgoing: Boolean,
-
-    /**
-     * Attachments metadata.
-     * Use `fileId` to download the actual content.
-     */
-    val attachments: List<MessageAttachment> = emptyList()
 )
 ```
 
