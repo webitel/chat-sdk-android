@@ -6,6 +6,7 @@ import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
+import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
@@ -46,6 +47,12 @@ internal interface ChatApiDelegate {
 
     fun registerDevice(
         pushToken: String,
+        onComplete: (Result<Unit>) -> Unit
+    )
+
+    fun sendAction(
+        messageId: String,
+        action: MessageAction,
         onComplete: (Result<Unit>) -> Unit
     )
 }

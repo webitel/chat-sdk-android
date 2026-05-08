@@ -8,6 +8,7 @@ import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
+import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Participant
@@ -41,6 +42,15 @@ internal class DialogImpl(
         onComplete: (Result<String>) -> Unit
     ): Cancellable {
         return client.sendMessage(MessageTarget.Dialog(id), options, onComplete)
+    }
+
+
+    override fun sendAction(
+        messageId: String,
+        action: MessageAction,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        client.sendAction(messageId, action, onComplete)
     }
 
 

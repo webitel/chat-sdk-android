@@ -5,20 +5,15 @@ import com.webitel.chat.sdk.ConnectionState
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.client.ClientContext
 import com.webitel.chat.sdk.internal.client.ExecutionContext
-import com.webitel.chat.sdk.internal.extensions.longOrNull
-import com.webitel.chat.sdk.internal.transport.dto.ContactDto
-import com.webitel.chat.sdk.internal.transport.dto.DialogDto
-import com.webitel.chat.sdk.internal.transport.dto.MessageDto
-import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.http.HeaderInterceptor
 import com.webitel.chat.sdk.internal.transport.http.HeaderProvider
+import com.webitel.chat.sdk.internal.transport.parser.Parser
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -32,6 +27,8 @@ internal class WssRealtimeTransport(
 
     private var realtimeListener: RealtimeListener? = null
     private var socket: WebSocket? = null
+
+    private val parser = Parser()
 
     val client: OkHttpClient
 
@@ -201,7 +198,7 @@ internal class WssRealtimeTransport(
         logger.debug(TAG, "handleMessage: $payload")
 
         val messageObj = payload.optJSONObject("message_event")
-        val message = parseMessage(messageObj)
+        val message = parser.parseMessage(messageObj)
         if (message == null) {
             logger.warn(TAG, "handleMessage: Invalid message payload, ignored")
             return
@@ -209,110 +206,7 @@ internal class WssRealtimeTransport(
 
         realtimeListener?.onMessage(message)
     }
-
-
-    private fun parseMessage(payload: JSONObject?): MessageDto? {
-        if (payload == null) return null
-        return try {
-            val id = payload.optString("id").takeIf { it.isNotEmpty() }
-            val dialogId = payload.optString("thread_id").takeIf { it.isNotEmpty() }
-            if (id == null || dialogId == null) {
-                return null
-            }
-            val createdAt = payload.longOrNull("created_at") ?: 0
-            val updatedAt = payload.longOrNull("edited_at") ?: createdAt
-            val sendId = payload.optString("send_id").takeIf { it.isNotEmpty() }
-
-            val from = parseParticipant(payload.optJSONObject("sender")) ?: return null
-
-            val text = payload.optString("body")
-
-            return MessageDto(
-                id = id,
-                dialogId = dialogId,
-                createdAt = createdAt,
-                updatedAt = updatedAt,
-                from = from,
-                text = text,
-                sendId = sendId
-            )
-        } catch (t: Throwable) {
-            logger.warn(TAG, "Failed to parse message payload: $payload; $t")
-            null
-        }
-    }
-
-
-    private fun parseParticipantArray(array: JSONArray?): List<ParticipantDto> =
-        buildList {
-            if (array == null) return@buildList
-
-            for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                parseParticipant(obj)?.let(::add)
-            }
-        }
-
-
-    private fun parseParticipant(obj: JSONObject?): ParticipantDto? {
-        if (obj == null) return null
-        val id = obj.optString("id")
-        if (id.isNullOrEmpty() ) return null
-        val contactObj = obj.optJSONObject("contact") ?: return null
-        val contact = parseContact(contactObj) ?: return null
-
-        val role = obj.optString("role", "ROLE_UNSPECIFIED")
-
-        return ParticipantDto(
-            id = id,
-            contact = contact,
-            role = role
-        )
-    }
-
-
-    private fun parseNewDialog(payload: JSONObject?): DialogDto? {
-        if (payload == null) return null
-        val id = payload.optString("id")
-        if (id.isNullOrEmpty()) return null
-
-        val subject = payload.optString("subject")
-        val type = payload.optString("type")
-
-        val members = parseParticipantArray(
-            payload.optJSONArray("members")
-        )
-
-        return DialogDto(
-            id = id,
-            subject = subject,
-            type = type,
-            members = members,
-            lastMessage = null
-        )
-    }
-
-
-    private fun parseContact(obj: JSONObject?): ContactDto? {
-        if (obj == null) return null
-
-        val id = obj.optString("sub")
-            .takeIf { !it.isNullOrEmpty() } ?: return null
-        val iss = obj.optString("iss")
-            .takeIf { !it.isNullOrEmpty() } ?: return null
-        val name = obj.optString("name", "unknown")
-        val source = obj.optString("type", iss)
-        val isBot = obj.optBoolean("is_bot")
-
-        return ContactDto(
-            id = id,
-            iss = iss,
-            name = name,
-            source = source,
-            isBot = isBot
-        )
-    }
-
+    
 
     private fun handleError(payload: JSONObject) {
         logger.debug(TAG, "handleError: $payload")
@@ -333,7 +227,7 @@ internal class WssRealtimeTransport(
         logger.debug(TAG, "handleDialogCreated: $payload")
 
         val dialogObj = payload.optJSONObject("thread_created_event")
-        val dialog = parseNewDialog(dialogObj)
+        val dialog = parser.parseDialog(dialogObj)
         if (dialog == null) {
             logger.warn(TAG, "handleDialogCreated: Invalid dialog payload, ignored")
             return

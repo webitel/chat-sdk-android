@@ -10,10 +10,12 @@ import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryCursor
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
+import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.MoveDirection
 import com.webitel.chat.sdk.Page
+import com.webitel.chat.sdk.SendContent
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.client.ClientContext
 import com.webitel.chat.sdk.internal.client.CompositeCancellable
@@ -22,9 +24,9 @@ import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
-import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.http.OkHttpCancellable
 import com.webitel.chat.sdk.internal.transport.http.safeCall
+import com.webitel.chat.sdk.internal.transport.parser.Parser
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -43,13 +45,19 @@ internal class HttpChatApiDelegate(
     private val execution: ExecutionContext,
     private val httpClient: OkHttpClient
 ): ChatApiDelegate {
+    private val parser = Parser()
 
     private companion object {
         const val TAG = "HttpChatApiDelegate"
         const val DIALOGS_PATH = "api/v1/threads"
         const val CONTACTS_PATH = "api/v1/contacts"
         const val SEND_TEXT_PATH = "api/v1/messages/text"
+        const val SEND_FILE_PATH = "api/v1/messages/file"
+        const val SEND_CONTACT_PATH = "api/v1/messages/contact"
+        const val SEND_LOCATION_PATH = "api/v1/messages/location"
         const val REGISTER_DEVICE_PATH = "api/v1/auth/devices"
+        const val SEND_ACTION_PATH = "api/v1/messages/interactive"
+        val JSON = "application/json".toMediaType()
     }
 
 
@@ -63,17 +71,15 @@ internal class HttpChatApiDelegate(
         execution.api {
             if (composite.isCanceled()) return@api
 
-            val json = buildMessageJson(target, options)
-            val body = json.toString()
-                .toRequestBody("application/json".toMediaType())
-
+            val (url, bodyJson) = buildRequest(target, options)
             val request = Request.Builder()
-                .url(buildSendMessageUrl())
-                .post(body)
+                .url(url)
+                .post(bodyJson.toString()
+                    .toRequestBody(JSON))
                 .build()
 
             logger.debug(TAG, request.toString())
-            logger.debug(TAG, json.toString())
+            logger.debug(TAG, bodyJson.toString())
 
             val call = httpClient.newCall(request)
             composite.add(OkHttpCancellable(call))
@@ -228,6 +234,17 @@ internal class HttpChatApiDelegate(
     }
 
 
+    override fun sendAction(
+        messageId: String,
+        action: MessageAction,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        execution.api {
+            onComplete(sendAction(messageId,action))
+        }
+    }
+
+
     override fun downloadFile(
         dialogId: String,
         fileId: String,
@@ -235,6 +252,33 @@ internal class HttpChatApiDelegate(
         listener: DownloadListener
     ): Cancellable {
         TODO("Not yet implemented")
+    }
+
+
+    private fun sendAction(
+        messageId: String,
+        action: MessageAction
+    ): Result<Unit> {
+        return safeCall(logger, TAG) {
+            val json = buildActionJson(action)
+            val request = Request.Builder()
+                .url(buildUrl("$SEND_ACTION_PATH/$messageId/callback"))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "sendAction request: $request")
+            logger.debug(TAG, "sendAction payload: $json")
+
+            httpClient.newCall(request).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "sendAction failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "sendAction success: $bodyString")
+            }
+        }
     }
 
 
@@ -246,10 +290,10 @@ internal class HttpChatApiDelegate(
             }
 
             val body = json.toString()
-                .toRequestBody("application/json".toMediaType())
+                .toRequestBody(JSON)
 
             val httpRequest = Request.Builder()
-                .url(buildRegisterDeviceUrl())
+                .url(buildUrl(REGISTER_DEVICE_PATH))
                 .post(body)
                 .build()
             logger.debug(TAG, "registerDevice: $httpRequest")
@@ -355,28 +399,28 @@ internal class HttpChatApiDelegate(
     }
 
 
-    private fun buildRegisterDeviceUrl(): HttpUrl =
+    private fun buildUrl(path: String): HttpUrl =
         HttpUrl.Builder()
             .scheme(clientContext.scheme)
             .host(clientContext.host)
-            .addPathSegments(REGISTER_DEVICE_PATH)
             .apply {
                 if (clientContext.port > 0)
                     port(clientContext.port)
             }
+            .addPathSegments(path)
             .build()
 
 
-    private fun buildSendMessageUrl(): HttpUrl =
-         HttpUrl.Builder()
-            .scheme(clientContext.scheme)
-            .host(clientContext.host)
-            .addPathSegments(SEND_TEXT_PATH)
-            .apply {
-                if (clientContext.port > 0)
-                    port(clientContext.port)
+    private fun buildActionJson(action: MessageAction): JSONObject {
+        return JSONObject().apply {
+            when (action) {
+                is MessageAction.ButtonClick -> {
+                    put("button_code", action.id)
+                    put("callback_data", action.data)
+                }
             }
-            .build()
+        }
+    }
 
 
     private fun parseDialogsResponse(
@@ -548,7 +592,7 @@ internal class HttpChatApiDelegate(
             if (array == null) return@buildList
 
             for (i in 0 until array.length()) {
-                parseContact(array.optJSONObject(i))?.let(::add)
+                parser.parseContact(array.optJSONObject(i))?.let(::add)
             }
         }
 
@@ -559,40 +603,9 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                parseMessage(obj)?.let(::add)
+                parser.parseMessage(obj)?.let(::add)
             }
         }
-
-
-    private fun parseParticipantArray(array: JSONArray?): List<ParticipantDto> =
-        buildList {
-            if (array == null) return@buildList
-
-            for (i in 0 until array.length()) {
-                val obj = array.optJSONObject(i) ?: continue
-                parseParticipant(obj)?.let(::add)
-            }
-        }
-
-
-    private fun parseParticipant(obj: JSONObject?): ParticipantDto? {
-        obj ?: return null
-
-        val id = obj.optString("id")
-        if (id.isNullOrEmpty() ) return null
-
-        val contact = parseContact(
-            obj.optJSONObject("contact")
-        ) ?: return null
-
-        val role = obj.optString("role", "ROLE_UNSPECIFIED")
-
-        return ParticipantDto(
-            id = id,
-            contact = contact,
-            role = role
-        )
-    }
 
 
     private fun parseDialogsArray(array: JSONArray?): List<DialogDto> =
@@ -601,80 +614,9 @@ internal class HttpChatApiDelegate(
 
             for (i in 0 until array.length()) {
                 val obj = array.optJSONObject(i) ?: continue
-                parseDialog(obj)?.let(::add)
+                parser.parseDialog(obj)?.let(::add)
             }
         }
-
-
-    private fun parseDialog(obj: JSONObject): DialogDto? {
-        val id = obj.optString("id")
-        if (id.isNullOrEmpty()) return null
-
-        val subject = obj.optString("subject")
-        val type = obj.optString("type")
-
-        val members = parseParticipantArray(obj.optJSONArray("members"))
-
-        val lastMsgObj = obj.optJSONObject("last_msg")
-        val lastMessage = parseMessage(lastMsgObj)
-
-        return DialogDto(
-            id = id,
-            subject = subject,
-            type = type,
-            members = members,
-            lastMessage = lastMessage
-        )
-    }
-
-
-    private fun parseContact(obj: JSONObject?): ContactDto? {
-        obj ?: return null
-
-        val id = obj.optString("sub")
-        val iss = obj.optString("iss")
-
-        if (id.isNullOrEmpty() || iss.isNullOrEmpty()) return null
-
-        val name = obj.optString("name", "unknown")
-        val source = obj.optString("type", iss)
-        val isBot = obj.optBoolean("is_bot")
-
-        return ContactDto(
-            iss = iss,
-            name = name,
-            id = id,
-            source = source,
-            isBot = isBot
-        )
-    }
-
-    
-    private fun parseMessage(messageObj: JSONObject?): MessageDto? {
-        messageObj ?: return null
-        val sender = parseParticipant(
-            messageObj.optJSONObject("sender")
-        ) ?: return null
-
-        val id = messageObj.optString("id")
-        if (id.isNullOrEmpty()) return null
-
-        val dialogId = messageObj.optString("thread_id")
-        val createdAt = messageObj.optLong("created_at")
-        val updatedAt = messageObj.optLong("edited_at")
-        val text = messageObj.optString("body")
-        val sendId = messageObj.optString("send_id").takeIf { it.isNotEmpty() }
-
-        return MessageDto(
-            id = id,
-            dialogId = dialogId,
-            createdAt = createdAt,
-            updatedAt = updatedAt,
-            from = sender,
-            text = text,
-            sendId = sendId
-        )
-    }
 
 
     private fun buildHistoryUrl(
@@ -746,12 +688,57 @@ internal class HttpChatApiDelegate(
     }
 
 
-    private fun buildMessageJson(target: MessageTarget,
-                          options: MessageOptions): JSONObject {
-        return JSONObject().apply {
-            options.text?.let { put("body", it) }
-            put("send_id", options.sendId)
+    private fun buildRequest(
+        target: MessageTarget,
+        options: MessageOptions
+    ): Pair<HttpUrl, JSONObject> {
 
+        val base = buildBaseJson(target, options)
+
+        return when (val content = options.content) {
+            is SendContent.Text -> {
+                base.put("body", content.text)
+                buildUrl(SEND_TEXT_PATH) to base
+            }
+
+            is SendContent.Contact -> {
+                base.put("name", content.name)
+                base.put("phone_number", content.phone)
+                base.put("email", content.email)
+                buildUrl(SEND_CONTACT_PATH) to base
+            }
+
+            is SendContent.Location -> {
+                base.put("name", content.name)
+                base.put("address", content.address)
+                base.put("latitude", content.latitude)
+                base.put("longitude", content.longitude)
+
+                buildUrl(SEND_LOCATION_PATH) to base
+            }
+
+            is SendContent.Attachments -> {
+                //base.put("attachments", mapAttachments(content.attachments))
+                buildUrl(SEND_FILE_PATH) to base
+            }
+
+            is SendContent.Composite -> {
+                 base.put("body", content.text)
+                if (content.attachments.isNotEmpty()) {
+                    //base.put("attachments", mapAttachments(content.attachments))
+                }
+                buildUrl(SEND_TEXT_PATH) to base
+            }
+        }
+    }
+
+
+    private fun buildBaseJson(
+        target: MessageTarget,
+        options: MessageOptions
+    ): JSONObject {
+        return JSONObject().apply {
+            put("send_id", options.sendId)
             put("to", JSONObject().apply {
                 when (target) {
                     is MessageTarget.Contact -> {

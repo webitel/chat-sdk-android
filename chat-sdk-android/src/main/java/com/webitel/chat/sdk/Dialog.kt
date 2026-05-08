@@ -43,7 +43,7 @@ interface Dialog {
      * Example:
      * ```
      * val options = MessageOptions(
-     *     text = "Hello"
+     *     content = SendContent.Text("Hello")
      * )
      *
      * val handle = dialog.sendMessage(options) { result ->
@@ -70,6 +70,24 @@ interface Dialog {
         options: MessageOptions,
         onComplete: (Result<String>) -> Unit
     ): Cancellable
+
+
+    /**
+     * Sends an action associated with a specific message.
+     *
+     * This is typically used for handling user interactions such as button clicks.
+     * The action is delivered to the server and processed in the context of the
+     * referenced message.
+     *
+     * @param messageId Identifier of the message the action relates to
+     * @param action Action to be performed
+     * @param onComplete Callback invoked with the result of the operation
+     */
+    fun sendAction(
+        messageId: String,
+        action: MessageAction,
+        onComplete: (Result<Unit>) -> Unit
+    )
 
 
     /**

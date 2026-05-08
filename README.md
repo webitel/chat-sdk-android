@@ -105,7 +105,9 @@ Each dialog is represented by a `Dialog` instance.
 Send a message to a dialog:
 
 ```kotlin
-val options = MessageOptions(text = "Hello")
+val options = MessageOptions(
+    content = SendContent.Text("Hello")
+)
 
 dialog.sendMessage(options) { result ->
     result.onSuccess { messageId ->

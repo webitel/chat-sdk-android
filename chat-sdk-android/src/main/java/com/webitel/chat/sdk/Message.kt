@@ -4,64 +4,59 @@ package com.webitel.chat.sdk
 /**
  * Represents a chat message.
  *
- * A message may contain text, attachments, or both.
- * Attachments contain metadata only — binary data must be downloaded explicitly.
+ * A message encapsulates all data required to render a single item in a conversation.
+ * Its content is defined by [MessageContent] and may include:
+ * - text
+ * - attachments
+ * - an interactive keyboard
+ * - or a combination of these
  */
 data class Message(
 
-    /** Unique message identifier */
+    /**
+     * Unique identifier of the message.
+     */
     val id: String,
 
-    /** Dialog identifier */
+    /**
+     * Identifier of the dialog this message belongs to.
+     */
     val dialogId: String,
 
-    /** Message creation timestamp (milliseconds since epoch) */
+    /**
+     * Message creation timestamp in milliseconds since epoch.
+     */
     val createdAt: Long,
 
     /**
-     * Last edit timestamp (milliseconds since epoch).
-     *
-     * Null if the message has never been edited.
+     * Last edit timestamp in milliseconds since epoch.
      */
-    val editedAt: Long?,
+    val editedAt: Long,
 
-    /** Sender of the message */
+    /**
+     * Sender of the message.
+     */
     val from: Participant,
 
     /**
-     * Text content of the message.
+     * Client-generated identifier used to track message sending state.
      *
-     * May be null when the message contains only attachments
-     * (for example, image or file messages).
-     */
-    val text: String?,
-
-    /**
-     * Client-generated request ID for the message.
-     * This ID is used to track the message request from the client side.
+     * Typically used for:
+     * - deduplication
+     * - request tracking
+     * - optimistic UI updates
      */
     val sendId: String? = null,
 
     /**
-     * Indicates whether the message is incoming or outgoing.
+     * Indicates whether the message was sent by the current user.
      */
     val isOutgoing: Boolean,
 
     /**
-     * List of attachments associated with this message.
+     * Message content.
      *
-     * Attachments provide metadata only.
-     * Use their `fileId` to download the actual content.
-     *
-     * Example:
-     * ```
-     * message.attachments.forEach { attachment ->
-     *     when (attachment) {
-     *         is MessageAttachment.Image -> showImagePreview(attachment)
-     *         is MessageAttachment.Video -> showVideoPreview(attachment)
-     *     }
-     * }
-     * ```
+     * See [MessageContent] for all supported content types and combinations.
      */
-    val attachments: List<MessageAttachment> = emptyList()
+    val content: MessageContent
 )

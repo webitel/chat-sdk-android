@@ -15,6 +15,7 @@ import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
+import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageEvent
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
@@ -81,6 +82,20 @@ internal class ChatClientImpl(
         return callCancellableWithAuthRetry(
             call = { callback ->
                 api.sendMessage(target, options, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun sendAction(
+        messageId: String,
+        action: MessageAction,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.sendAction(messageId, action, callback)
             },
             onComplete = onComplete
         )
