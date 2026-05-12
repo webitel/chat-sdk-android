@@ -140,7 +140,13 @@ internal class WssRealtimeTransport(
         when (event) {
             EventType.Connected -> handleConnected(payload)
             EventType.Disconnected -> handleDisconnected(payload)
-            EventType.Message -> handleMessage(payload)
+            EventType.Message -> {
+                json.optString("id")
+                    .takeIf { it.isNotBlank() }
+                    ?.let(::sendAck)
+
+                handleMessage(payload)
+            }
             EventType.Ack -> handleAck(payload)
             EventType.Error -> handleError(payload)
             EventType.Ping -> handlePing(payload)
@@ -159,6 +165,17 @@ internal class WssRealtimeTransport(
                 .toString()
             )
         }
+    }
+
+
+    private fun sendAck(eventId: String) {
+        logger.debug(TAG, "Send ACK for eventId=$eventId")
+        socket?.send(
+            JSONObject()
+                .put("type", "ack")
+                .put("event_id", eventId)
+                .toString()
+        )
     }
 
 

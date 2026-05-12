@@ -61,7 +61,7 @@ afterEvaluate {
 
             groupId = "com.webitel"
             artifactId = "chat-sdk-android"
-            version = "0.3.1"
+            version = "0.3.2"
         }
     }
 }
