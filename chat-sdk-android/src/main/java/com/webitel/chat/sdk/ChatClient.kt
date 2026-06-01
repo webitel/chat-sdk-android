@@ -124,6 +124,42 @@ interface ChatClient {
 
 
     /**
+     * Starts an asynchronous file upload operation.
+     *
+     * Upload progress and completion events are delivered
+     * through the provided [UploadListener].
+     *
+     * The returned [Cancellable] can be used to cancel
+     * the upload at any time.
+     *
+     * If the upload was interrupted previously,
+     * [UploadRequest.resumeId] can be used to continue it.
+     */
+    fun upload(
+        request: UploadRequest,
+        listener: UploadListener
+    ): Cancellable
+
+
+    /**
+     * Starts an asynchronous file download operation.
+     *
+     * Downloaded file data is delivered incrementally
+     * through [DownloadListener.onChunk].
+     *
+     * The returned [Cancellable] can be used to cancel
+     * the download at any time.
+     *
+     * Downloads may optionally resume from a specific byte offset
+     * using [DownloadRequest.offset].
+     */
+    fun download(
+        request: DownloadRequest,
+        listener: DownloadListener
+    ): Cancellable
+
+
+    /**
      * Registers a global chat event listener.
      *
      * The listener will receive all chat-related events across

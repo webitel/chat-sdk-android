@@ -5,6 +5,7 @@ import com.webitel.chat.sdk.ChatKeyboard
 import com.webitel.chat.sdk.ChatKeyboardButton
 import com.webitel.chat.sdk.ChatKeyboardRow
 import com.webitel.chat.sdk.ChatKeyboardSection
+import com.webitel.chat.sdk.MessageAttachment
 import com.webitel.chat.sdk.MessageContent
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
@@ -105,16 +106,25 @@ internal class Parser {
             )
         }
 
-        val text = obj.optString("body").takeIf { it.isNotEmpty() }
+        val text = obj.optString("body")
+            .takeIf { it.isNotBlank() }
+
+        val attachments = parseAttachments(obj)
 
         val keyboard = obj
             .optJSONObject("interactive")
             ?.let { parseKeyboard(it) }
 
-        if (keyboard != null && text != null) {
+        if (
+            listOf(
+                text != null,
+                attachments.isNotEmpty(),
+                keyboard != null
+            ).count { it } >= 2
+        ) {
             return MessageContent.Composite(
                 text = text,
-                attachments = emptyList(), // TODO
+                attachments = attachments,
                 keyboard = keyboard
             )
         }
@@ -127,7 +137,32 @@ internal class Parser {
             return MessageContent.KeyboardOnly(keyboard)
         }
 
+        if (attachments.isNotEmpty()) {
+            return MessageContent.Attachments(attachments)
+        }
+
         return null
+    }
+
+
+    private fun parseAttachments(obj: JSONObject): List<MessageAttachment> {
+        val documents = obj.optJSONArray("documents") ?: return emptyList()
+        return buildList {
+            for (i in 0 until documents.length()) {
+                val item = documents.optJSONObject(i) ?: continue
+                add(
+                    MessageAttachment(
+                        fileId = item.optString("id"),
+                        fileName = item.optString("name"),
+                        mimeType = item.optString("mime"),
+                        size = item.optString("size")
+                            .toLongOrNull() ?: 0,
+                        url = item.optString("url")
+                            .takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+        }
     }
 
 

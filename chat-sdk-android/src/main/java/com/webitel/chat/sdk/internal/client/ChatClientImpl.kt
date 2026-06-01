@@ -12,6 +12,7 @@ import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogEvent
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DownloadListener
+import com.webitel.chat.sdk.DownloadRequest
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
@@ -20,7 +21,11 @@ import com.webitel.chat.sdk.MessageEvent
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
+import com.webitel.chat.sdk.UploadListener
+import com.webitel.chat.sdk.UploadRequest
 import com.webitel.chat.sdk.internal.api.ChatApiDelegate
+import com.webitel.chat.sdk.internal.api.FileUploader
+import com.webitel.chat.sdk.internal.api.HttpFileDownloader
 import com.webitel.chat.sdk.internal.auth.AuthManager
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
@@ -37,6 +42,8 @@ internal class ChatClientImpl(
     private val api: ChatApiDelegate,
     private val authManager: AuthManager,
     private val realtime: RealtimeTransport,
+    private val fileUploader: FileUploader,
+    private val fileDownloader: HttpFileDownloader,
     private val hub: RealtimeHub): ChatClient {
     private var retryAttempt = 0
     private var realtimeEnabled = false
@@ -142,6 +149,22 @@ internal class ChatClientImpl(
     }
 
 
+    override fun upload(
+        request: UploadRequest,
+        listener: UploadListener
+    ): Cancellable {
+        return  fileUploader.upload(request, listener)
+    }
+
+
+    override fun download(
+        request: DownloadRequest,
+        listener: DownloadListener
+    ): Cancellable {
+        return fileDownloader.download(request, listener)
+    }
+
+
     override fun registerDevice(
         pushToken: String,
         onComplete: (Result<Unit>) -> Unit
@@ -228,64 +251,6 @@ internal class ChatClientImpl(
             },
             onComplete = onComplete
         )
-    }
-
-
-    fun downloadFile(
-        dialogId: String,
-        fileId: String,
-        offset: Long?,
-        listener: DownloadListener
-    ): Cancellable {
-
-        var retried = false
-        var currentCall: Cancellable?
-
-        fun startDownload(): Cancellable {
-            return api.downloadFile(
-                dialogId,
-                fileId,
-                offset,
-                object : DownloadListener {
-
-                    override fun onChunk(bytes: ByteArray) {
-                        listener.onChunk(bytes)
-                    }
-
-                    override fun onComplete() {
-                        listener.onComplete()
-                    }
-
-                    override fun onCanceled() {
-                        listener.onCanceled()
-                    }
-
-                    override fun onError(error: ChatError) {
-                        if (error is ChatError.Unauthorized && !retried) {
-                            retried = true
-
-                            authManager.refresh { authResult ->
-                                if (authResult.isSuccess) {
-                                    currentCall = startDownload()
-                                } else {
-                                    listener.onError(authResult.exceptionOrNull() as ChatError)
-                                }
-                            }
-                        } else {
-                            listener.onError(error)
-                        }
-                    }
-                }
-            )
-        }
-
-        currentCall = startDownload()
-
-        return object : Cancellable {
-            override fun cancel() {
-                currentCall?.cancel()
-            }
-        }
     }
 
 

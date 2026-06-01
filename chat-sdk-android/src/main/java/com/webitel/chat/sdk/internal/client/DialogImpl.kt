@@ -4,7 +4,6 @@ import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatEventListener
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogType
-import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
@@ -59,23 +58,6 @@ internal class DialogImpl(
         onComplete: (Result<HistorySlice<Message>>) -> Unit
     ) {
         client.getHistory(id, request, onComplete)
-    }
-
-
-    override fun downloadFile(
-        fileId: String,
-        listener: DownloadListener
-    ): Cancellable {
-        return client.downloadFile(id, fileId, null, listener)
-    }
-
-
-    override fun downloadFile(
-        fileId: String,
-        offset: Long,
-        listener: DownloadListener
-    ): Cancellable {
-        return client.downloadFile(id, fileId, offset, listener)
     }
 
 

@@ -8,6 +8,8 @@ import com.webitel.chat.sdk.LogLevel
 import com.webitel.chat.sdk.NetworkConfig
 import com.webitel.chat.sdk.internal.auth.HttpAuthManager
 import com.webitel.chat.sdk.internal.api.HttpChatApiDelegate
+import com.webitel.chat.sdk.internal.api.HttpFileDownloader
+import com.webitel.chat.sdk.internal.api.HttpFileUploader
 import com.webitel.chat.sdk.internal.transport.http.HeaderProvider
 import com.webitel.chat.sdk.internal.transport.realtime.WssRealtimeTransport
 import com.webitel.chat.sdk.internal.repository.DeviceInfoRepository
@@ -95,6 +97,18 @@ internal class ChatClientBuilder(
             httpClient
         )
 
+        val fileUploader = HttpFileUploader(
+            clientContext,
+            execution,
+            httpClient
+        )
+
+        val fileDownloader = HttpFileDownloader(
+            clientContext,
+            execution,
+            httpClient
+        )
+
         val realtimeTransport = WssRealtimeTransport(
             clientContext,
             execution,
@@ -110,6 +124,8 @@ internal class ChatClientBuilder(
             apiDelegate,
             authManager,
             realtimeTransport,
+            fileUploader,
+            fileDownloader,
             realtimeHub
         )
     }

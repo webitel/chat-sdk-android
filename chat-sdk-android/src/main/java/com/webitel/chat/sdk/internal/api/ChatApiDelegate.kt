@@ -3,7 +3,6 @@ package com.webitel.chat.sdk.internal.api
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogRequest
-import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.MessageAction
@@ -37,13 +36,6 @@ internal interface ChatApiDelegate {
         request: HistoryRequest,
         onComplete: (Result<HistorySlice<MessageDto>>) -> Unit
     )
-
-    fun downloadFile(
-        dialogId: String,
-        fileId: String,
-        offset: Long?,
-        listener: DownloadListener
-    ): Cancellable
 
     fun registerDevice(
         pushToken: String,

@@ -94,9 +94,28 @@ sealed class SendContent {
     ) : SendContent()
 
 
-    /** Message containing only attachments. */
+    /**
+     * Message containing one or more file attachments.
+     *
+     * Attachments may reference:
+     * - previously uploaded files
+     * - external URLs
+     *
+     * Example:
+     * ```
+     * SendContent.Attachments(
+     *     attachments = listOf(
+     *         SendAttachment.File(fileId = "123"),
+     *         SendAttachment.Url(
+     *              url = "https://example.com/image.jpg",
+     *              fileName = "image.jpg"
+     *         )
+     *     )
+     * )
+     * ```
+     */
     data class Attachments(
-        val attachments: List<MessageAttachment>
+        val attachments: List<SendAttachment>
     ) : SendContent()
 
 
@@ -125,6 +144,6 @@ sealed class SendContent {
      */
     data class Composite(
         val text: String,
-        val attachments: List<MessageAttachment> = emptyList()
+        val attachments: List<SendAttachment> = emptyList()
     ) : SendContent()
 }

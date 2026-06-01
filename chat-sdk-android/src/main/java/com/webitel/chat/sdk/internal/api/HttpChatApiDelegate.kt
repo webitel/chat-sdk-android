@@ -6,7 +6,6 @@ import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogFilter
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DialogType
-import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.HistoryCursor
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
@@ -15,6 +14,7 @@ import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.MoveDirection
 import com.webitel.chat.sdk.Page
+import com.webitel.chat.sdk.SendAttachment
 import com.webitel.chat.sdk.SendContent
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.client.ClientContext
@@ -52,7 +52,7 @@ internal class HttpChatApiDelegate(
         const val DIALOGS_PATH = "api/v1/threads"
         const val CONTACTS_PATH = "api/v1/contacts"
         const val SEND_TEXT_PATH = "api/v1/messages/text"
-        const val SEND_FILE_PATH = "api/v1/messages/file"
+        const val SEND_FILE_PATH = "api/v1/messages/document"
         const val SEND_CONTACT_PATH = "api/v1/messages/contact"
         const val SEND_LOCATION_PATH = "api/v1/messages/location"
         const val REGISTER_DEVICE_PATH = "api/v1/auth/devices"
@@ -242,16 +242,6 @@ internal class HttpChatApiDelegate(
         execution.api {
             onComplete(sendAction(messageId,action))
         }
-    }
-
-
-    override fun downloadFile(
-        dialogId: String,
-        fileId: String,
-        offset: Long?,
-        listener: DownloadListener
-    ): Cancellable {
-        TODO("Not yet implemented")
     }
 
 
@@ -718,16 +708,35 @@ internal class HttpChatApiDelegate(
             }
 
             is SendContent.Attachments -> {
-                //base.put("attachments", mapAttachments(content.attachments))
+                base.put("documents", mapAttachments(content.attachments))
                 buildUrl(SEND_FILE_PATH) to base
             }
 
             is SendContent.Composite -> {
-                 base.put("body", content.text)
+                base.put("body", content.text)
                 if (content.attachments.isNotEmpty()) {
-                    //base.put("attachments", mapAttachments(content.attachments))
+                    base.put("documents", mapAttachments(content.attachments))
                 }
-                buildUrl(SEND_TEXT_PATH) to base
+                buildUrl(SEND_FILE_PATH) to base
+            }
+        }
+    }
+
+
+    private fun mapAttachments(attachments: List<SendAttachment>): JSONArray {
+        return JSONArray().apply {
+            attachments.forEach { attachment ->
+                val json = JSONObject()
+                when (attachment) {
+                    is SendAttachment.File -> {
+                        json.put("id", attachment.fileId)
+                    }
+                    is SendAttachment.Url -> {
+                        json.put("file_name", attachment.fileName)
+                        json.put("url", attachment.url)
+                    }
+                }
+                put(json)
             }
         }
     }

@@ -62,6 +62,11 @@ sealed class ChatError(
         message =  "Service unavailable"
     )
 
+    object Canceled : ChatError(
+        code = 499,
+        message =  "Client canceled operation"
+    )
+
     /**
      * Server returned a known error code that does not have
      * a dedicated typed error yet.

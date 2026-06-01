@@ -107,42 +107,6 @@ interface Dialog {
 
 
     /**
-     * Initiates a file download associated with this dialog.
-     *
-     * File data is delivered in chunks to the provided [DownloadListener].
-     * The SDK does NOT persist the file on disk — the client is responsible
-     * for handling storage, caching, or in-memory processing.
-     *
-     * @param fileId The unique identifier of the file
-     * @param listener Listener receiving file chunks and completion events
-     *
-     * @return A [Cancellable] handle for cancelling the download
-     */
-    fun downloadFile(
-        fileId: String,
-        listener: DownloadListener
-    ): Cancellable
-
-
-    /**
-     * Initiates a file download starting from a specific byte offset.
-     *
-     * This is useful for resuming interrupted downloads.
-     *
-     * @param fileId The unique identifier of the file
-     * @param offset Byte offset to start downloading from
-     * @param listener Listener receiving file chunks and completion events
-     *
-     * @return A [Cancellable] handle for cancelling the download
-     */
-    fun downloadFile(
-        fileId: String,
-        offset: Long,
-        listener: DownloadListener
-    ): Cancellable
-
-
-    /**
      * Registers a dialog-scoped chat event listener.
      *
      * The listener will receive only events related to this dialog
