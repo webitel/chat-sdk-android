@@ -94,6 +94,31 @@ when (val content = message.content) {
 }
 ```
 
+#### File Metadata in Messages
+
+Received messages may contain file attachments.
+
+Example:
+
+```kotlin
+when (val content = message.content) {
+    is MessageContent.Attachments -> {
+        content.attachments.forEach { attachment ->
+            
+        }
+    }
+
+    is MessageContent.Composite -> {
+        content.attachments.forEach { attachment ->
+
+        }
+    }
+}
+```
+
+Attachments contain metadata only.
+
+File content must be downloaded explicitly using the attachment file identifier.
 
 ## Message model
 
