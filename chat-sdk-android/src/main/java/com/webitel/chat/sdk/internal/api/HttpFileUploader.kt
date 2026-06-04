@@ -152,7 +152,7 @@ internal class HttpFileUploader(
 
         return object : RequestBody() {
             override fun contentType(): MediaType =
-                request.mimeType.toMediaTypeOrNull()
+                request.mimeType?.toMediaTypeOrNull()
                     ?: DEFAULT_MIME_TYPE.toMediaType()
 
             override fun writeTo(sink: BufferedSink) {
@@ -176,6 +176,9 @@ internal class HttpFileUploader(
                         sink.write(buffer, 0, read)
 
                         uploaded += read
+
+                        logger.debug(TAG,
+                            "Sent chunk $read; total sent: $uploaded; full size: ${request.totalSize}")
 
                         onProgress?.invoke(
                             uploaded,
@@ -277,7 +280,7 @@ internal class HttpFileUploader(
         val file = UploadedFile(
             id = json.getString("fileId"),
             name = json.getString("name"),
-            mimeType = json.getString("mime_type"),
+            mimeType = json.getString("mimeType"),
             size = json.getLong("size")
         )
 

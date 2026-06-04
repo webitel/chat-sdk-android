@@ -230,12 +230,54 @@ internal class Parser {
         val label = obj.optString("label")
         val action = parseAction(obj) ?: return null
 
+        val metadataMap = if (obj.has("metadata") && !obj.isNull("metadata")) {
+            val metadataObj = obj.optJSONObject("metadata")
+            metadataObj?.toMap()
+        } else {
+            null
+        }
+
         return ChatKeyboardButton(
             id = id,
             label = label,
             action = action,
-            metadata = null
+            metadata = metadataMap
         )
+    }
+
+
+    fun JSONObject.toMap(): Map<String, Any> {
+        val map = mutableMapOf<String, Any>()
+        val keys = this.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            var value = this.get(key)
+            if (value == JSONObject.NULL) {
+                continue
+            }
+            if (value is JSONObject) {
+                value = value.toMap()
+            } else if (value is JSONArray) {
+                value = value.toList()
+            }
+            map[key] = value
+        }
+        return map
+    }
+
+
+    fun JSONArray.toList(): List<Any> {
+        val list = mutableListOf<Any>()
+        for (i in 0 until this.length()) {
+            var value = this.get(i)
+            if (value is JSONObject) {
+                value = value.toMap()
+            } else if (value is JSONArray) {
+                value = value.toList()
+            }
+            list.add(value)
+        }
+        return list
     }
 
 

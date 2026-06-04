@@ -24,7 +24,7 @@ data class UploadRequest(
      * Example:
      * `image/png`, `application/pdf`
      */
-    val mimeType: String,
+    val mimeType: String? = null,
 
     /**
      * Total file size in bytes, if known.
