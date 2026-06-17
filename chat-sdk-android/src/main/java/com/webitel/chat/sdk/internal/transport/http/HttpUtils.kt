@@ -14,7 +14,7 @@ internal inline fun <T> safeCall(
         Result.failure(e)
     } catch (e: Exception) {
         val error = ChatError.fromCode(ChatError.UNKNOWN_CODE, e.message)
-        logger.error(tag, "safeCall: ${error.stackTrace}")
+        logger.error(tag, "safeCall: ${error.stackTraceToString()}")
         Result.failure(error)
     }
 }

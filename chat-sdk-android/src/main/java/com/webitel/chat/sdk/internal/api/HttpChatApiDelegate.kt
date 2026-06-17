@@ -274,7 +274,6 @@ internal class HttpChatApiDelegate(
 
     private fun registerDevice(pushToken: String): Result<Unit> {
         return safeCall(logger, TAG) {
-            logger.debug(TAG, "registerDevice: $pushToken")
             val json = JSONObject().apply {
                 put("fcm", pushToken)
             }

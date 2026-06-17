@@ -6,6 +6,7 @@ import com.webitel.chat.sdk.ContactIdentity
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.client.ClientContext
 import com.webitel.chat.sdk.internal.client.ExecutionContext
+import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.transport.http.HeaderProvider
 import com.webitel.chat.sdk.internal.extensions.toJsonObject
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
@@ -56,15 +57,16 @@ internal class HttpAuthManager(
         execution.api {
             val result = performRefresh()
 
+            val callbacksToExecute: List<(Result<Unit>) -> Unit>
+
             synchronized(lock) {
                 refreshing = false
-
-                val callbacks = pending.toList()
+                callbacksToExecute = pending.toList()
                 pending.clear()
+            }
 
-                callbacks.forEach { cb ->
-                    cb(result)
-                }
+            callbacksToExecute.forEach { cb ->
+                cb(result)
             }
         }
     }
@@ -74,6 +76,31 @@ internal class HttpAuthManager(
         execution.api {
             onComplete(userLogout())
         }
+    }
+
+
+    override fun ensureAuthValid(onComplete: (Result<Unit>) -> Unit) {
+        logger.debug(TAG,"ensure auth valid")
+        if (headerProvider.hasAuth()) {
+            synchronized(lock) {
+                if (refreshing) {
+                    logger.debug(TAG,
+                        "ensureAuthValid: auth is refreshing. Added to queue"
+                    )
+                    pending += onComplete
+                    return
+                }
+            }
+            onComplete.invoke(Result.success(Unit))
+            return
+        }
+
+        refresh(onComplete)
+    }
+
+
+    override fun clearAuth() {
+        headerProvider.updateAccessToken(null)
     }
 
 
@@ -313,7 +340,7 @@ internal class HttpAuthManager(
             notifyUpdate(token)
             Result.success(Unit)
         } else {
-            Result.failure(inspect.exceptionOrNull()!!)
+            Result.failure(inspect.exceptionOrNull()!!.toChatError())
         }
     }
 

@@ -14,5 +14,6 @@ data class ClientContext(
     val authMethod: AuthMethod,
     val deviceId: String,
     val agent: String,
+    val autoRefreshAuth: Boolean,
     var pinnedHashes: Set<String>
 )

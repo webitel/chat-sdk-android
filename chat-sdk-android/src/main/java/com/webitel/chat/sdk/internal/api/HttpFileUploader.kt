@@ -252,7 +252,7 @@ internal class HttpFileUploader(
             .get()
             .build()
 
-        logger.debug(TAG, "resume upload: $uploadId")
+        logger.debug(TAG, "$url")
 
         val call = uploadClient.newCall(httpRequest)
         task.call = call

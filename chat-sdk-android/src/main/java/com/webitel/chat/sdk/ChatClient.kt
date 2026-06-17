@@ -310,6 +310,21 @@ interface ChatClient {
 
 
         /**
+         * Enables automatic token refresh and request retry on `401 Unauthorized` responses.
+         *
+         * Default value is `true`.
+         *
+         * When enabled, the SDK will:
+         * - Detect `401` responses from API requests
+         * - Request a new JWT or Contact via `AuthMethod`
+         * - Retry the original request once the token is refreshed and validated
+         *
+         * If the refreshed token is still invalid, the original request will fail with `401`.
+         */
+        fun autoRefreshAuth(value: Boolean): Builder
+
+
+        /**
          * Sets a unique device identifier used for session tracking.
          */
         fun deviceId(value: String): Builder

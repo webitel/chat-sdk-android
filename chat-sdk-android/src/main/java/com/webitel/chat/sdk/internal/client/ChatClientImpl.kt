@@ -27,6 +27,7 @@ import com.webitel.chat.sdk.internal.api.ChatApiDelegate
 import com.webitel.chat.sdk.internal.api.FileUploader
 import com.webitel.chat.sdk.internal.api.HttpFileDownloader
 import com.webitel.chat.sdk.internal.auth.AuthManager
+import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
@@ -196,7 +197,31 @@ internal class ChatClientImpl(
         realtimeEnabled = true
         retryAttempt = 0
         hub.updateState(ConnectionState.Connecting)
-        realtime.connect()
+
+        authManager.ensureAuthValid { authResult ->
+            authResult.fold(
+                onSuccess = { realtime.connect() },
+                onFailure = { error ->
+                    if (error is ChatError.Unauthorized) {
+                        handleUnauthorized(
+                            false,
+                            retry = {
+                                authManager.refresh { authRefresh ->
+                                    authRefresh.fold(
+                                        onSuccess = { realtime.connect() },
+                                        onFailure = { failRealtime(it.toChatError()) }
+                                    )
+                                }
+                            },
+                            fail = { failRealtime(error.toChatError()) }
+                        )
+
+                    } else {
+                        failRealtime(error.toChatError())
+                    }
+                }
+            )
+        }
     }
 
 
@@ -280,7 +305,11 @@ internal class ChatClientImpl(
                 }
 
                 if (error is ChatError.Unauthorized) {
-                    refreshAuthAndReconnect()
+                    if (clientContext.autoRefreshAuth) {
+                        refreshAuthAndReconnect()
+                        return
+                    }
+                    failRealtime(error)
                     return
                 }
 
@@ -306,7 +335,11 @@ internal class ChatClientImpl(
                 }
 
                 if (code == 401 || code == 1008) {
-                    refreshAuthAndReconnect()
+                    if (clientContext.autoRefreshAuth) {
+                        refreshAuthAndReconnect()
+                        return
+                    }
+                    closeRealtime(code, reason)
                     return
                 }
 
@@ -331,11 +364,10 @@ internal class ChatClientImpl(
         authManager.refresh { authResult ->
             if (!realtimeEnabled) return@refresh
 
-            if (authResult.isSuccess) {
-                tryConnect()
-            } else {
-                failRealtime(authResult.exceptionOrNull() as ChatError)
-            }
+            authResult.fold(
+                onSuccess = { tryConnect() },
+                onFailure = { failRealtime(it.toChatError()) }
+            )
         }
     }
 
@@ -400,22 +432,56 @@ internal class ChatClientImpl(
         var retried = false
 
         fun execute() {
-            call { result ->
-                result.fold(
-                    onSuccess = { onComplete(result) },
-                    onFailure = { error ->
-                        if (error is ChatError.Unauthorized && !retried) {
-                            retried = true
+            authManager.ensureAuthValid { authResult ->
+                authResult.fold(
+                    onSuccess = {
+                        call { result ->
+                            result.fold(
+                                onSuccess = { onComplete(Result.success(it)) },
+                                onFailure = { error ->
+                                    if (error is ChatError.Unauthorized) {
+                                        handleUnauthorized(
+                                            retried,
+                                            retry = {
+                                                retried = true
+                                                authManager.refresh { authRefresh ->
+                                                    authRefresh.fold(
+                                                        onSuccess = { execute() },
+                                                        onFailure = { err ->
+                                                            onComplete(Result.failure(err.toChatError()))
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            fail = { onComplete(Result.failure(error.toChatError())) }
+                                        )
 
-                            authManager.refresh { authResult ->
-                                if (authResult.isSuccess) {
-                                    execute()
-                                } else {
-                                    onComplete(Result.failure(authResult.exceptionOrNull()!!))
+                                    } else {
+                                        onComplete(Result.failure(error.toChatError()))
+                                    }
                                 }
-                            }
+                            )
+                        }
+                    },
+
+                    onFailure = { error ->
+                        if (error is ChatError.Unauthorized) {
+                            handleUnauthorized(
+                                retried,
+                                retry = {
+                                    retried = true
+                                    authManager.refresh { authRefresh ->
+                                        authRefresh.fold(
+                                            onSuccess = { execute() },
+                                            onFailure = { onComplete(Result.failure(it.toChatError())) }
+                                        )
+                                    }
+                                },
+                                fail = { onComplete(Result.failure(error.toChatError())) }
+                            )
+
                         } else {
-                            onComplete(Result.failure(error))
+                            onComplete(Result.failure(error.toChatError()))
                         }
                     }
                 )
@@ -434,38 +500,92 @@ internal class ChatClientImpl(
         val composite = CompositeCancellable()
         var retried = false
 
-        fun executeCall() {
+        fun execute() {
             if (composite.isCanceled()) return
 
-            val c = call { result ->
-                if (composite.isCanceled()) return@call
+            authManager.ensureAuthValid { authResult ->
+                if (composite.isCanceled()) return@ensureAuthValid
 
-                result.fold(
-                    onSuccess = { onComplete(Result.success(it)) },
-                    onFailure = { error ->
-                        if (error is ChatError.Unauthorized && !retried) {
-                            retried = true
+                authResult.fold(
+                    onSuccess = {
+                        val c = call { result ->
+                            if (composite.isCanceled()) return@call
 
-                            authManager.refresh { authResult ->
-                                if (composite.isCanceled()) return@refresh
+                            result.fold(
+                                onSuccess = { onComplete(Result.success(it)) },
+                                onFailure = { error ->
+                                    if (error is ChatError.Unauthorized) {
+                                        handleUnauthorized(
+                                            retried,
+                                            retry = {
+                                                retried = true
+                                                authManager.refresh { authRefresh ->
+                                                    if (composite.isCanceled()) return@refresh
 
-                                if (authResult.isSuccess) {
-                                    executeCall()
-                                } else {
-                                    onComplete(Result.failure(authResult.exceptionOrNull()!!))
+                                                    authRefresh.fold(
+                                                        onSuccess = { execute() },
+                                                        onFailure = { err ->
+                                                            onComplete(Result.failure(err.toChatError()))
+                                                        }
+                                                    )
+                                                }
+                                            },
+
+                                            fail = { onComplete(Result.failure(error.toChatError())) }
+                                        )
+
+                                    } else {
+                                        onComplete(Result.failure(error.toChatError()))
+                                    }
                                 }
-                            }
+                            )
+                        }
+
+                        composite.add(c)
+                    },
+                    onFailure = { error ->
+                        if (error is ChatError.Unauthorized) {
+                            handleUnauthorized(
+                                retried,
+                                retry = {
+                                    retried = true
+                                    authManager.refresh { authRefresh ->
+                                        if (composite.isCanceled()) return@refresh
+
+                                        authRefresh.fold(
+                                            onSuccess = { execute() },
+                                            onFailure = { err ->
+                                                onComplete(Result.failure(err.toChatError()))
+                                            }
+                                        )
+                                    }
+                                },
+
+                                fail = { onComplete(Result.failure(error.toChatError())) }
+                            )
                         } else {
-                            onComplete(Result.failure(error))
+                            onComplete(Result.failure(error.toChatError()))
                         }
                     }
                 )
             }
-
-            composite.add(c)
         }
 
-        executeCall()
+        execute()
         return composite
+    }
+
+
+    private inline fun handleUnauthorized(
+        retried: Boolean,
+        crossinline retry: () -> Unit,
+        crossinline fail: () -> Unit
+    ) {
+        authManager.clearAuth()
+        if (!retried && clientContext.autoRefreshAuth) {
+            retry()
+        } else {
+            fail()
+        }
     }
 }

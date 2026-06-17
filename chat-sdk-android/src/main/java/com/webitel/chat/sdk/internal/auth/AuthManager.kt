@@ -6,4 +6,7 @@ internal interface AuthManager {
     val currentContact: ContactDto?
     fun refresh(onComplete: (Result<Unit>) -> Unit)
     fun endSession(onComplete: (Result<Unit>) -> Unit)
+
+    fun ensureAuthValid(onComplete: (Result<Unit>) -> Unit)
+    fun clearAuth()
 }

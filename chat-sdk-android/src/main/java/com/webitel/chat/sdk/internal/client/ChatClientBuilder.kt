@@ -31,6 +31,7 @@ internal class ChatClientBuilder(
 
     private var authMethod: AuthMethod? = null
     private var deviceId: String? = null
+    private var autoRefreshAuth: Boolean = true
     private var logLevel: LogLevel = LogLevel.ERROR
     private var networkConfig = NetworkConfig()
     private var pinnedPublicKeyHashes: Set<String> = emptySet()
@@ -45,6 +46,10 @@ internal class ChatClientBuilder(
 
     override fun pinnedPublicKeys(pins: Collection<String>) = apply {
         this.pinnedPublicKeyHashes = pins.toSet()
+    }
+
+    override fun autoRefreshAuth(value: Boolean) = apply {
+        this.autoRefreshAuth = value
     }
 
     override fun deviceId(value: String) = apply {
@@ -75,6 +80,7 @@ internal class ChatClientBuilder(
             authMethod,
             deviceId ?: deviceInfoRepository.getDeviceId(),
             deviceInfoRepository.getUserAgent(),
+            autoRefreshAuth,
             pinnedPublicKeyHashes
         )
 
