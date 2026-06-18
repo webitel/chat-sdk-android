@@ -17,6 +17,10 @@ internal class RealtimeHub {
 
     private var publishedState: ConnectionState = ConnectionState.Disconnected
 
+    private companion object {
+        const val TAG = "RealtimeHub"
+    }
+
 
     fun addGlobalListener(listener: ChatEventListener) {
         globalListeners += listener
@@ -73,7 +77,6 @@ internal class RealtimeHub {
 
     fun addConnectionListener(listener: ConnectionListener) {
         connectionListeners += listener
-        listener.onStateChanged(publishedState)
     }
 
 
@@ -84,11 +87,17 @@ internal class RealtimeHub {
 
     fun updateState(newState: ConnectionState) {
         if (publishedState == newState) return
-       logger.debug("RealtimeHub", "updateState: from $publishedState; to $newState")
+
+        val oldState = publishedState
         publishedState = newState
+
+        logger.debug(TAG,
+            "connection state: $oldState -> $newState"
+        )
+
         connectionListeners.forEach { listener ->
             try {
-                listener.onStateChanged(newState)
+                listener.onStateChanged(oldState, newState)
             } catch (t: Throwable) {
                 logClientListenerCrash(
                     scope = "onStateChanged",
