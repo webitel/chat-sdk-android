@@ -106,6 +106,20 @@ internal class Parser {
             )
         }
 
+        obj.optJSONObject("system")?.let { system ->
+            val metadataMap = if (system.has("metadata") && !system.isNull("metadata")) {
+                val metadataObj = system.optJSONObject("metadata")
+                metadataObj?.toMap()
+            } else {
+                null
+            }
+            return MessageContent.System(
+                type = system.optString("type"),
+                text = obj.optString("body"),
+                metadata = metadataMap
+            )
+        }
+
         val text = obj.optString("body")
             .takeIf { it.isNotBlank() }
 

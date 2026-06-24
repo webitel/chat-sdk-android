@@ -7,6 +7,7 @@ import com.webitel.chat.sdk.ChatEventListener
 import com.webitel.chat.sdk.ConnectionListener
 import com.webitel.chat.sdk.ConnectionState
 import com.webitel.chat.sdk.Contact
+import com.webitel.chat.sdk.ContactId
 import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogEvent
@@ -121,6 +122,25 @@ internal class ChatClientImpl(
                                 page.items.map { dialogFactory.getOrCreate(it) },
                                 page.hasNext
                             )
+                        }
+                    )
+                }
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun getOrCreateDialog(
+        contactId: ContactId,
+        onComplete: (Result<Dialog>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.getOrCreateDialog(contactId) { result ->
+                    callback(
+                        result.map { dto ->
+                            dialogFactory.getOrCreate(dto)
                         }
                     )
                 }

@@ -1,6 +1,7 @@
 package com.webitel.chat.sdk.internal.api
 
 import com.webitel.chat.sdk.Cancellable
+import com.webitel.chat.sdk.ContactId
 import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.HistoryRequest
@@ -24,6 +25,11 @@ internal interface ChatApiDelegate {
     fun getDialogs(
         request: DialogRequest,
         onComplete: (Result<Page<DialogDto>>) -> Unit
+    )
+
+    fun getOrCreateDialog(
+        contactId: ContactId,
+        onComplete: (Result<DialogDto>) -> Unit
     )
 
     fun getContacts(

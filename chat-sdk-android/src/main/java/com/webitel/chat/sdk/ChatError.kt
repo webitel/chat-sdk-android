@@ -67,6 +67,11 @@ sealed class ChatError(
         message =  "Client canceled operation"
     )
 
+    class InvalidResponse(val messageOverride: String? = null) : ChatError(
+        code = UNKNOWN_CODE,
+        message = messageOverride ?: "Invalid response"
+    )
+
     /**
      * Server returned a known error code that does not have
      * a dedicated typed error yet.

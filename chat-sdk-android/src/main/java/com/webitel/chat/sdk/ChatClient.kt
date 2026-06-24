@@ -110,6 +110,19 @@ interface ChatClient {
 
 
     /**
+     * Returns an existing direct dialog for the specified contact,
+     * or creates a new one if none exists.
+     *
+     * @param contactId The unique identifier of the contact.
+     * @param onComplete Callback invoked with the dialog on success or an error on failure.
+     */
+    fun getOrCreateDialog(
+        contactId: ContactId,
+        onComplete: (Result<Dialog>) -> Unit
+    )
+
+
+    /**
      * Loads contacts available for the current session.
      *
      * Supports pagination via [ContactRequest].

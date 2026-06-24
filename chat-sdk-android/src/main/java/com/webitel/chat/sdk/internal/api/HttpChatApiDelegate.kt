@@ -2,6 +2,7 @@ package com.webitel.chat.sdk.internal.api
 
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatError
+import com.webitel.chat.sdk.ContactId
 import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogFilter
 import com.webitel.chat.sdk.DialogRequest
@@ -143,6 +144,45 @@ internal class HttpChatApiDelegate(
                 override fun onResponse(call: Call, response: Response) {
                     response.use { res ->
                         onComplete(parseDialogsResponse(res, request))
+                    }
+                }
+            })
+        }
+    }
+
+
+    override fun getOrCreateDialog(
+        contactId: ContactId,
+        onComplete: (Result<DialogDto>) -> Unit
+    ) {
+        execution.api {
+            val call = runCatching {
+                val json = buildCreateDialogJson(contactId)
+                val httpRequest = Request.Builder()
+                    .url(buildUrl(DIALOGS_PATH))
+                    .post(json.toString().toRequestBody(JSON))
+                    .build()
+
+                logger.debug(TAG, "getOrCreateDialog: $httpRequest")
+                logger.debug(TAG, "getOrCreateDialog payload: $json")
+
+                httpClient.newCall(httpRequest)
+            }.getOrElse { error ->
+                onComplete(Result.failure(error.toChatError()))
+                return@api
+            }
+
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    logger.error(TAG,
+                        "getOrCreateDialog: onFailure ${e.message.toString()}"
+                    )
+                    onComplete(Result.failure(e.toChatError()))
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use { res ->
+                        onComplete(parseCreateDialogResponse(res))
                     }
                 }
             })
@@ -412,6 +452,18 @@ internal class HttpChatApiDelegate(
     }
 
 
+    private fun buildCreateDialogJson(contactId: ContactId): JSONObject {
+        return JSONObject().apply {
+            put("direct", JSONObject().apply {
+                put("member", JSONObject().apply {
+                    put("iss", contactId.iss)
+                    put("sub", contactId.sub)
+                })
+            })
+        }
+    }
+
+
     private fun parseDialogsResponse(
         res: Response,
         request: DialogRequest
@@ -452,6 +504,46 @@ internal class HttpChatApiDelegate(
                 items = items,
                 hasNext = hasNext
             )
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { Result.failure(it.toChatError()) }
+        )
+    }
+
+
+    private fun parseCreateDialogResponse(
+        response: Response,
+    ): Result<DialogDto> {
+        val bodyString = response.body?.string()
+        logger.debug(TAG, "parseCreateDialogResponse: $bodyString")
+
+        if (!response.isSuccessful) {
+            logger.error(
+                TAG,
+                "parseCreateDialogResponse: Code=${response.code} $bodyString"
+            )
+            return Result.failure(
+                ChatError.fromCode(response.code, bodyString)
+            )
+        }
+
+        if (bodyString.isNullOrEmpty()) {
+            logger.error(
+                TAG,
+                "parseCreateDialogResponse: Empty response body. Code=${response.code}"
+            )
+            return Result.failure(
+                ChatError.InvalidResponse("Empty response body")
+            )
+        }
+
+        return runCatching {
+            val root = JSONObject(bodyString)
+            val thread = root.optJSONObject("thread")
+                ?: throw ChatError.InvalidResponse("Missing 'thread' object")
+
+            parser.parseDialog(thread)
+                ?: throw ChatError.InvalidResponse("parseDialog returned null")
         }.fold(
             onSuccess = { Result.success(it) },
             onFailure = { Result.failure(it.toChatError()) }
