@@ -15,7 +15,8 @@ sealed class ChatKeyboard {
      * Buttons are arranged into horizontal rows.
      */
     data class Buttons(
-        val rows: List<ChatKeyboardRow>
+        val rows: List<ChatKeyboardRow>,
+        val noInput: Boolean
     ) : ChatKeyboard()
 
     /**
@@ -26,7 +27,8 @@ sealed class ChatKeyboard {
      */
     data class ListMenu(
         val title: String,
-        val sections: List<ChatKeyboardSection>
+        val sections: List<ChatKeyboardSection>,
+        val noInput: Boolean
     ) : ChatKeyboard()
 }
 

@@ -181,16 +181,19 @@ internal class Parser {
 
 
     private fun parseKeyboard(obj: JSONObject): ChatKeyboard? {
+        val noInput = obj.optBoolean("single_use")
         obj.optJSONObject("list_reply")?.let { list ->
             return ChatKeyboard.ListMenu(
                 title = list.optString("main_button_title"),
-                sections = parseSections(list.optJSONArray("sections"))
+                sections = parseSections(list.optJSONArray("sections")),
+                noInput
             )
         }
 
         obj.optJSONObject("markup")?.let { markdown ->
             return ChatKeyboard.Buttons(
-                rows = parseRows(markdown.optJSONArray("rows"))
+                rows = parseRows(markdown.optJSONArray("rows")),
+                noInput
             )
         }
 
