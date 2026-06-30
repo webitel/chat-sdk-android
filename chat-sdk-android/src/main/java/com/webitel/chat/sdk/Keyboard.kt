@@ -16,7 +16,10 @@ sealed class ChatKeyboard {
      */
     data class Buttons(
         val rows: List<ChatKeyboardRow>,
-        val noInput: Boolean
+        val noInput: Boolean,
+
+        /** Information about the selected button, if any.*/
+        val selection: ChatKeyboardReaction?,
     ) : ChatKeyboard()
 
     /**
@@ -28,7 +31,10 @@ sealed class ChatKeyboard {
     data class ListMenu(
         val title: String,
         val sections: List<ChatKeyboardSection>,
-        val noInput: Boolean
+        val noInput: Boolean,
+
+        /** Information about the selected button, if any.*/
+        val selection: ChatKeyboardReaction?,
     ) : ChatKeyboard()
 }
 

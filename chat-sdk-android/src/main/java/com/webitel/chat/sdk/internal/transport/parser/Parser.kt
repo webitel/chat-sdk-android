@@ -3,10 +3,12 @@ package com.webitel.chat.sdk.internal.transport.parser
 import com.webitel.chat.sdk.ChatButtonAction
 import com.webitel.chat.sdk.ChatKeyboard
 import com.webitel.chat.sdk.ChatKeyboardButton
+import com.webitel.chat.sdk.ChatKeyboardReaction
 import com.webitel.chat.sdk.ChatKeyboardRow
 import com.webitel.chat.sdk.ChatKeyboardSection
 import com.webitel.chat.sdk.MessageAttachment
 import com.webitel.chat.sdk.MessageContent
+import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
@@ -125,9 +127,10 @@ internal class Parser {
 
         val attachments = parseAttachments(obj)
 
-        val keyboard = obj
-            .optJSONObject("interactive")
-            ?.let { parseKeyboard(it) }
+        val keyboard = obj.optJSONObject("interactive")?.let { interactive ->
+            val reacted = parseSelectedButton(obj.optJSONObject("reacted_metadata"))
+            parseKeyboard(interactive, reacted)
+        }
 
         if (
             listOf(
@@ -180,20 +183,22 @@ internal class Parser {
     }
 
 
-    private fun parseKeyboard(obj: JSONObject): ChatKeyboard? {
+    private fun parseKeyboard(obj: JSONObject, selection: ChatKeyboardReaction?): ChatKeyboard? {
         val noInput = obj.optBoolean("single_use")
         obj.optJSONObject("list_reply")?.let { list ->
             return ChatKeyboard.ListMenu(
                 title = list.optString("main_button_title"),
                 sections = parseSections(list.optJSONArray("sections")),
-                noInput
+                noInput,
+                selection
             )
         }
 
         obj.optJSONObject("markup")?.let { markdown ->
             return ChatKeyboard.Buttons(
                 rows = parseRows(markdown.optJSONArray("rows")),
-                noInput
+                noInput,
+                selection
             )
         }
 
@@ -238,6 +243,24 @@ internal class Parser {
                 }
             }
         }
+
+
+    private fun parseSelectedButton(obj: JSONObject?): ChatKeyboardReaction? {
+        if (obj == null) return null
+        val buttonCode = obj.optString("button_code")
+        val callbackData = obj.optString("callback_data")
+        val reactedAt = obj.optLong("reacted_at")
+        val reactedBy = parseParticipant(
+            obj.optJSONObject("reacted_by")
+        ) ?: return null
+
+        return ChatKeyboardReaction(
+            buttonCode = buttonCode,
+            callbackData = callbackData,
+            reactedAt = reactedAt,
+            reactedBy = reactedBy.toDomain()
+        )
+    }
 
 
     private fun parseButton(obj: JSONObject): ChatKeyboardButton? {
@@ -327,7 +350,6 @@ internal class Parser {
         obj ?: return null
 
         val id = obj.optString("id")
-        if (id.isNullOrEmpty() ) return null
 
         val contact = parseContact(
             obj.optJSONObject("contact")
