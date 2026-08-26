@@ -54,17 +54,29 @@ sealed class MessageEvent : ChatEvent {
     /** Emitted when an existing message is edited. */
     data class Edited(
         override val dialogId: String,
-        val messageId: String,
-        val newText: String,
+        val message: Message,
     ) : MessageEvent()
 
     /** Emitted when a message is deleted. */
     data class Deleted(
         override val dialogId: String,
+        val deletion: MessageDeletion,
+    ) : MessageEvent()
+
+    /** Emitted when the aggregated reactions on a message changed. */
+    data class ReactionsChanged(
+        override val dialogId: String,
         val messageId: String,
+        val reactions: List<MessageReaction>,
     ) : MessageEvent()
 }
 ```
+
+See [Message Editing](message-editing.md) for details on `Edited`.
+
+See [Message Deletion](message-deletion.md) for details on `Deleted`.
+
+See [Reactions](reactions.md) for details on `ReactionsChanged`.
 
 ### Dialog events
 
@@ -79,24 +91,21 @@ sealed class DialogEvent : ChatEvent {
 }
 ```
 
-### State events
+### Activity events
 
 ```kotlin
-sealed class StateEvent : ChatEvent {
+sealed class ActivityEvent : ChatEvent {
     /** Emitted when a participant is typing. */
     data class Typing(
         override val dialogId: String,
-        val userId: String,
-    ) : StateEvent()
-
-    /** Emitted when a message is marked as read by a participant. */
-    data class Read(
-        override val dialogId: String,
-        val messageId: String,
-        val contactId: String,
-    ) : StateEvent()
+        val member: Participant,
+        val previewText: String? = null,
+        val timeoutMs: Long? = null,
+    ) : ActivityEvent()
 }
 ```
+
+See [Typing Indicators](typing.md) for details on `Typing`.
 
 ## Handling events
 
@@ -107,16 +116,16 @@ override fun onEvent(event: ChatEvent) {
             event.message
         }
         is MessageEvent.Edited -> {
-            // update message content
+            // replace the local message with event.message
         }
         is MessageEvent.Deleted -> {
-            // remove or mark as deleted
+            // remove or mark event.deletion.messageId as deleted
         }
-        is StateEvent.Typing -> {
+        is MessageEvent.ReactionsChanged -> {
+            // update reactions on the message
+        }
+        is ActivityEvent.Typing -> {
             // show typing indicator
-        }
-        is StateEvent.Read -> {
-            // update read status
         }
         is DialogEvent.Created -> {
             event.dialog
