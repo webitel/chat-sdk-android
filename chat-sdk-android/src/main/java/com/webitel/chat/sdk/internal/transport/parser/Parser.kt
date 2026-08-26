@@ -11,17 +11,21 @@ import com.webitel.chat.sdk.MessageContent
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
 import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
+import com.webitel.chat.sdk.internal.transport.dto.TypingDto
 import org.json.JSONArray
 import org.json.JSONObject
 
 
 internal class Parser {
-    fun parseMessage(messageObj: JSONObject?): MessageDto? {
+    fun parseMessage(messageObj: JSONObject?, participantKey: String = "sender"): MessageDto? {
         messageObj ?: return null
         val sender = parseParticipant(
-            messageObj.optJSONObject("sender")
+            messageObj.optJSONObject(participantKey)
         ) ?: return null
 
         val id = messageObj.optString("id")
@@ -30,9 +34,11 @@ internal class Parser {
         val dialogId = messageObj.optString("thread_id")
         val createdAt = messageObj.optLong("created_at")
         val updatedAt = messageObj.optLong("edited_at")
+            .takeIf { messageObj.has("edited_at") }
         val sendId = messageObj.optString("send_id").takeIf { it.isNotEmpty() }
 
         val content = parseContent(messageObj) ?: return null
+        val reactions = parseReactionsArray(messageObj.optJSONArray("reactions"))
         return MessageDto(
             id = id,
             dialogId = dialogId,
@@ -40,7 +46,112 @@ internal class Parser {
             editedAt = updatedAt,
             from = sender,
             content = content,
-            sendId = sendId
+            sendId = sendId,
+            reactions = reactions
+        )
+    }
+
+
+    fun parseReactionEvent(obj: JSONObject?): MessageReactionEventDto? {
+        obj ?: return null
+
+        val dialogId = obj.optString("thread_id")
+        if (dialogId.isNullOrEmpty()) return null
+
+        val messageId = obj.optString("message_id")
+        if (messageId.isNullOrEmpty()) return null
+
+        val reactions = parseReactionsArray(obj.optJSONArray("reactions"))
+
+        return MessageReactionEventDto(
+            dialogId = dialogId,
+            messageId = messageId,
+            reactions = reactions
+        )
+    }
+
+
+    private fun parseReactionsArray(array: JSONArray?): List<MessageReactionDto> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                parseReaction(obj)?.let(::add)
+            }
+        }
+
+
+    private fun parseReaction(obj: JSONObject): MessageReactionDto? {
+        val emoji = obj.optString("emoji")
+        if (emoji.isNullOrEmpty()) return null
+
+        val reactorIds = obj.optJSONArray("reactor_ids")
+            ?.toList()
+            ?.filterIsInstance<String>()
+            ?: emptyList()
+
+        val lastReactedAt = obj.optLong("last_reacted_at")
+            .takeIf { obj.has("last_reacted_at") }
+
+        return MessageReactionDto(
+            emoji = emoji,
+            count = obj.optInt("count"),
+            reactedByMe = obj.optBoolean("reacted_by_me"),
+            reactorIds = reactorIds,
+            lastReactedAt = lastReactedAt
+        )
+    }
+
+
+    fun parseMessageEditedEvent(obj: JSONObject?): MessageDto? =
+        parseMessage(obj, participantKey = "edited_by")
+
+
+    fun parseMessageDeletedEvent(obj: JSONObject?): MessageDeletedEventDto? {
+        obj ?: return null
+
+        val dialogId = obj.optString("thread_id")
+        if (dialogId.isNullOrEmpty()) return null
+
+        val messageId = obj.optString("id")
+        if (messageId.isNullOrEmpty()) return null
+
+        val deletedBy = parseParticipant(
+            obj.optJSONObject("deleted_by")
+        ) ?: return null
+
+        val deletedAt = obj.optLong("deleted_at")
+
+        return MessageDeletedEventDto(
+            dialogId = dialogId,
+            messageId = messageId,
+            deletedBy = deletedBy,
+            deletedAt = deletedAt
+        )
+    }
+
+
+    fun parseTyping(obj: JSONObject?): TypingDto? {
+        obj ?: return null
+
+        val dialogId = obj.optString("thread_id")
+        if (dialogId.isNullOrEmpty()) return null
+
+        val member = parseParticipant(
+            obj.optJSONObject("from")
+        ) ?: return null
+
+        val previewText = obj.optString("preview_text")
+            .takeIf { it.isNotEmpty() }
+        val timeoutMs = obj.optLong("timeout_ms")
+            .takeIf { obj.has("timeout_ms") }
+
+        return TypingDto(
+            dialogId = dialogId,
+            member = member,
+            previewText = previewText,
+            timeoutMs = timeoutMs
         )
     }
 

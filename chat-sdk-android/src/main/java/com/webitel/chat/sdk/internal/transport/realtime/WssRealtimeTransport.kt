@@ -147,6 +147,10 @@ internal class WssRealtimeTransport(
 
                 handleMessage(payload)
             }
+            EventType.Typing -> handleTyping(payload)
+            EventType.MessageReaction -> handleMessageReaction(payload)
+            EventType.MessageDeleted -> handleMessageDeleted(payload)
+            EventType.MessageEdited -> handleMessageEdited(payload)
             EventType.Ack -> handleAck(payload)
             EventType.Error -> handleError(payload)
             EventType.Ping -> handlePing(payload)
@@ -223,7 +227,63 @@ internal class WssRealtimeTransport(
 
         realtimeListener?.onMessage(message)
     }
-    
+
+
+    private fun handleTyping(payload: JSONObject) {
+        logger.debug(TAG, "handleTyping: $payload")
+
+        val typingObj = payload.optJSONObject("typing_event")
+        val typing = parser.parseTyping(typingObj)
+        if (typing == null) {
+            logger.warn(TAG, "handleTyping: Invalid typing payload, ignored")
+            return
+        }
+
+        realtimeListener?.onTyping(typing)
+    }
+
+
+    private fun handleMessageReaction(payload: JSONObject) {
+        logger.debug(TAG, "handleMessageReaction: $payload")
+
+        val obj = payload.optJSONObject("message_reaction_event")
+        val event = parser.parseReactionEvent(obj)
+        if (event == null) {
+            logger.warn(TAG, "handleMessageReaction: Invalid payload, ignored")
+            return
+        }
+
+        realtimeListener?.onMessageReaction(event)
+    }
+
+
+    private fun handleMessageDeleted(payload: JSONObject) {
+        logger.debug(TAG, "handleMessageDeleted: $payload")
+
+        val obj = payload.optJSONObject("message_deleted_event")
+        val event = parser.parseMessageDeletedEvent(obj)
+        if (event == null) {
+            logger.warn(TAG, "handleMessageDeleted: Invalid payload, ignored")
+            return
+        }
+
+        realtimeListener?.onMessageDeleted(event)
+    }
+
+
+    private fun handleMessageEdited(payload: JSONObject) {
+        logger.debug(TAG, "handleMessageEdited: $payload")
+
+        val obj = payload.optJSONObject("message_edited_event")
+        val message = parser.parseMessageEditedEvent(obj)
+        if (message == null) {
+            logger.warn(TAG, "handleMessageEdited: Invalid message payload, ignored")
+            return
+        }
+
+        realtimeListener?.onMessageEdited(message)
+    }
+
 
     private fun handleError(payload: JSONObject) {
         logger.debug(TAG, "handleError: $payload")

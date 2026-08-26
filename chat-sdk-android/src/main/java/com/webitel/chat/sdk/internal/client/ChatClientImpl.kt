@@ -14,14 +14,20 @@ import com.webitel.chat.sdk.DialogEvent
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.DownloadRequest
+import com.webitel.chat.sdk.EditMessageResult
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
 import com.webitel.chat.sdk.MessageAction
+import com.webitel.chat.sdk.MessageDeletion
+import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageEvent
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
+import com.webitel.chat.sdk.ActivityEvent
+import com.webitel.chat.sdk.ReactionResult
+import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.UploadListener
 import com.webitel.chat.sdk.UploadRequest
 import com.webitel.chat.sdk.internal.api.ChatApiDelegate
@@ -31,7 +37,10 @@ import com.webitel.chat.sdk.internal.auth.AuthManager
 import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
+import com.webitel.chat.sdk.internal.transport.dto.TypingDto
 import com.webitel.chat.sdk.internal.transport.realtime.RealtimeListener
 import com.webitel.chat.sdk.internal.transport.realtime.RealtimeTransport
 import java.util.Timer
@@ -105,6 +114,62 @@ internal class ChatClientImpl(
         callWithAuthRetry(
             call = { callback ->
                 api.sendAction(messageId, action, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    fun sendTyping(
+        dialogId: String,
+        request: TypingRequest,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.sendTyping(dialogId, request, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun setReaction(
+        messageId: String,
+        emoji: String,
+        sendId: String?,
+        onComplete: (Result<ReactionResult>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.setReaction(messageId, emoji, sendId, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun deleteMessages(
+        ids: List<String>,
+        onComplete: (Result<MessageDeletionResult>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.deleteMessages(ids, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun editMessage(
+        messageId: String,
+        text: String,
+        onComplete: (Result<EditMessageResult>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.editMessage(messageId, text, callback)
             },
             onComplete = onComplete
         )
@@ -315,6 +380,56 @@ internal class ChatClientImpl(
                 val newDialog = dialogFactory.getOrCreate(dialog)
                 hub.dispatch(
                     DialogEvent.Created(newDialog.id, newDialog)
+                )
+            }
+
+            override fun onTyping(typing: TypingDto) {
+                hub.dispatch(
+                    ActivityEvent.Typing(
+                        dialogId = typing.dialogId,
+                        member = typing.member.toDomain(),
+                        previewText = typing.previewText,
+                        timeoutMs = typing.timeoutMs
+                    )
+                )
+            }
+
+            override fun onMessageReaction(event: MessageReactionEventDto) {
+                dialogFactory.get(event.dialogId)?.applyReactions(event.messageId, event.reactions)
+
+                hub.dispatch(
+                    MessageEvent.ReactionsChanged(
+                        dialogId = event.dialogId,
+                        messageId = event.messageId,
+                        reactions = event.reactions.map { it.toDomain() }
+                    )
+                )
+            }
+
+            override fun onMessageDeleted(event: MessageDeletedEventDto) {
+                dialogFactory.get(event.dialogId)?.applyDeletion(event.messageId)
+
+                hub.dispatch(
+                    MessageEvent.Deleted(
+                        dialogId = event.dialogId,
+                        deletion = MessageDeletion(
+                            messageId = event.messageId,
+                            deletedBy = event.deletedBy.toDomain(),
+                            deletedAt = event.deletedAt
+                        )
+                    )
+                )
+            }
+
+            override fun onMessageEdited(message: MessageDto) {
+                val dialog = dialogFactory.get(message.dialogId)
+                val merged = dialog?.applyEdit(message) ?: message
+
+                hub.dispatch(
+                    MessageEvent.Edited(
+                        dialogId = message.dialogId,
+                        message = merged.toDomain(authManager.currentContact?.id)
+                    )
                 )
             }
 

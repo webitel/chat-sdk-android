@@ -67,7 +67,7 @@ sealed class MessageEvent : ChatEvent {
      *     is MessageEvent.Edited -> {
      *         messagesAdapter.updateText(
      *             messageId = event.messageId,
-     *             newText = event.newText
+     *             message = event.message
      *         )
      *     }
      * }
@@ -75,14 +75,14 @@ sealed class MessageEvent : ChatEvent {
      */
     data class Edited(
         override val dialogId: String,
-        val messageId: String,
-        val newText: String,
+        val message: Message
     ) : MessageEvent()
 
     /**
      * Emitted when a message was deleted.
      *
-     * Clients may:
+     * Carries who deleted the message and when, in addition to its
+     * identifier. Clients may:
      * - remove the message from UI
      * - or replace it with a "Message deleted" placeholder
      *
@@ -90,14 +90,38 @@ sealed class MessageEvent : ChatEvent {
      * ```
      * when (event) {
      *     is MessageEvent.Deleted -> {
-     *         messagesAdapter.remove(event.messageId)
+     *         messagesAdapter.remove(event.deletion.messageId)
      *     }
      * }
      * ```
      */
     data class Deleted(
         override val dialogId: String,
+        val deletion: MessageDeletion,
+    ) : MessageEvent()
+
+    /**
+     * Emitted when the aggregated reactions on a message changed.
+     *
+     * Carries the full current reaction list for the message
+     * (not a delta) — clients should replace their local list wholesale.
+     *
+     * Example usage:
+     * ```
+     * when (event) {
+     *     is MessageEvent.ReactionsChanged -> {
+     *         messagesAdapter.updateReactions(
+     *             messageId = event.messageId,
+     *             reactions = event.reactions
+     *         )
+     *     }
+     * }
+     * ```
+     */
+    data class ReactionsChanged(
+        override val dialogId: String,
         val messageId: String,
+        val reactions: List<MessageReaction>,
     ) : MessageEvent()
 }
 
@@ -131,7 +155,7 @@ sealed class DialogEvent : ChatEvent {
  *
  * These events usually should NOT be persisted.
  */
-sealed class StateEvent : ChatEvent {
+sealed class ActivityEvent : ChatEvent {
 
     /**
      * Emitted when a participant is typing.
@@ -142,34 +166,29 @@ sealed class StateEvent : ChatEvent {
      * ```
      * when (event) {
      *     is StateEvent.Typing -> {
-     *         typingIndicator.show(event.userId)
+     *         typingIndicator.show(event.member)
      *     }
      * }
      * ```
      */
     data class Typing(
         override val dialogId: String,
-        val userId: String,
-    ) : StateEvent()
+        val member: Participant,
+        val previewText: String? = null,
+        val timeoutMs: Long? = null,
+    ) : ActivityEvent()
 
-    /**
-     * Emitted when a message was marked as read by a participant.
-     *
-     * Example usage:
-     * ```
-     * when (event) {
-     *     is StateEvent.Read -> {
-     *         messagesAdapter.markAsRead(
-     *             messageId = event.messageId,
-     *             userId = event.userId
-     *         )
-     *     }
-     * }
-     * ```
-     */
-    data class Read(
-        override val dialogId: String,
-        val messageId: String,
-        val userId: String,
-    ) : StateEvent()
+
+//    data class recordingVideo(
+//        override val dialogId: String,
+//        val member: Participant,
+//        val timeoutMs: Long? = null,
+//    ) : ActivityEvent()
+//
+//
+//    data class recordingAudio(
+//        override val dialogId: String,
+//        val member: Participant,
+//        val timeoutMs: Long? = null,
+//    ) : ActivityEvent()
 }

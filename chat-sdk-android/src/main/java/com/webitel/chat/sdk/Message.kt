@@ -29,9 +29,10 @@ data class Message(
     val createdAt: Long,
 
     /**
-     * Last edit timestamp in milliseconds since epoch.
+     * Last edit timestamp in milliseconds since epoch, or `null` if the
+     * message was never edited.
      */
-    val editedAt: Long,
+    val editedAt: Long? = null,
 
     /**
      * Sender of the message.
@@ -58,5 +59,19 @@ data class Message(
      *
      * See [MessageContent] for all supported content types and combinations.
      */
-    val content: MessageContent
-)
+    val content: MessageContent,
+
+    /**
+     * Aggregated reactions on this message, one entry per distinct emoji.
+     *
+     * Kept up to date via [MessageEvent.ReactionsChanged] while realtime is active.
+     */
+    val reactions: List<MessageReaction> = emptyList()
+) {
+
+    /**
+     * Indicates whether the message was edited after creation.
+     */
+    val isEdited: Boolean
+        get() = editedAt != null
+}

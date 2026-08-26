@@ -7,16 +7,23 @@ import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogFilter
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DialogType
+import com.webitel.chat.sdk.EditMessageResult
 import com.webitel.chat.sdk.HistoryCursor
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.MessageAction
+import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageOptions
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.MoveDirection
 import com.webitel.chat.sdk.Page
+import com.webitel.chat.sdk.ReactionAction
+import com.webitel.chat.sdk.ReactionResult
 import com.webitel.chat.sdk.SendAttachment
 import com.webitel.chat.sdk.SendContent
+import com.webitel.chat.sdk.SkippedMessage
+import com.webitel.chat.sdk.SkippedMessageReason
+import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.client.ClientContext
 import com.webitel.chat.sdk.internal.client.CompositeCancellable
@@ -58,6 +65,8 @@ internal class HttpChatApiDelegate(
         const val SEND_LOCATION_PATH = "api/v1/messages/location"
         const val REGISTER_DEVICE_PATH = "api/v1/auth/devices"
         const val SEND_ACTION_PATH = "api/v1/messages/interactive"
+        const val REACTIONS_PATH = "api/v1/messages"
+        const val DELETE_MESSAGES_PATH = "api/v1/messages/delete"
         val JSON = "application/json".toMediaType()
     }
 
@@ -310,6 +319,259 @@ internal class HttpChatApiDelegate(
             }
         }
     }
+
+
+    override fun sendTyping(
+        dialogId: String,
+        request: TypingRequest,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        execution.api {
+            onComplete(sendTyping(dialogId, request))
+        }
+    }
+
+
+    private fun sendTyping(
+        dialogId: String,
+        request: TypingRequest
+    ): Result<Unit> {
+        return safeCall(logger, TAG) {
+            val json = buildTypingJson(request)
+            val httpRequest = Request.Builder()
+                .url(buildUrl("$DIALOGS_PATH/$dialogId/typing"))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "sendTyping request: $httpRequest")
+            logger.debug(TAG, "sendTyping payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "sendTyping failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "sendTyping success: $bodyString")
+            }
+        }
+    }
+
+
+    private fun buildTypingJson(request: TypingRequest): JSONObject {
+        return JSONObject().apply {
+            request.previewText?.let { put("preview_text", it) }
+            request.timeoutMs?.let { put("timeout_ms", it) }
+        }
+    }
+
+
+    override fun setReaction(
+        messageId: String,
+        emoji: String,
+        sendId: String?,
+        onComplete: (Result<ReactionResult>) -> Unit
+    ) {
+        execution.api {
+            onComplete(setReaction(messageId, emoji, sendId))
+        }
+    }
+
+
+    private fun setReaction(
+        messageId: String,
+        emoji: String,
+        sendId: String?
+    ): Result<ReactionResult> {
+        return safeCall(logger, TAG) {
+            val json = buildReactionJson(emoji, sendId)
+            val httpRequest = Request.Builder()
+                .url(buildUrl("$REACTIONS_PATH/$messageId/reaction"))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "setReaction request: $httpRequest")
+            logger.debug(TAG, "setReaction payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "setReaction failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "setReaction success: $bodyString")
+                parseReactionResult(bodyString)
+            }
+        }
+    }
+
+
+    private fun buildReactionJson(emoji: String, sendId: String?): JSONObject {
+        return JSONObject().apply {
+            put("emoji", emoji)
+            sendId?.let { put("send_id", it) }
+        }
+    }
+
+
+    private fun parseReactionResult(bodyString: String): ReactionResult {
+        val json = JSONObject(bodyString)
+
+        val action = ReactionAction.from(json.optString("action"))
+        val emoji = json.optString("emoji").takeIf { it.isNotEmpty() }
+        val reactedAt = json.optLong("reacted_at")
+            .takeIf { json.has("reacted_at") }
+
+        return ReactionResult(
+            action = action,
+            emoji = emoji,
+            reactedAt = reactedAt
+        )
+    }
+
+
+    override fun deleteMessages(
+        ids: List<String>,
+        onComplete: (Result<MessageDeletionResult>) -> Unit
+    ) {
+        execution.api {
+            onComplete(deleteMessages(ids))
+        }
+    }
+
+
+    override fun editMessage(
+        messageId: String,
+        text: String,
+        onComplete: (Result<EditMessageResult>) -> Unit
+    ) {
+        execution.api {
+            onComplete(editMessage(messageId, text))
+        }
+    }
+
+
+    private fun editMessage(messageId: String, text: String): Result<EditMessageResult> {
+        return safeCall(logger, TAG) {
+            val json = buildEditMessageJson(text)
+            val httpRequest = Request.Builder()
+                .url(buildUrl("$REACTIONS_PATH/$messageId"))
+                .patch(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "editMessage request: $httpRequest")
+            logger.debug(TAG, "editMessage payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "editMessage failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "editMessage success: $bodyString")
+                parseEditMessageResult(bodyString)
+            }
+        }
+    }
+
+
+    private fun buildEditMessageJson(text: String): JSONObject {
+        return JSONObject().apply {
+            put("body", text)
+        }
+    }
+
+
+    private fun parseEditMessageResult(bodyString: String): EditMessageResult {
+        val json = JSONObject(bodyString)
+
+        return EditMessageResult(
+            messageId = json.optString("id"),
+            editedAt = json.optLong("edited_at")
+        )
+    }
+
+
+    private fun deleteMessages(ids: List<String>): Result<MessageDeletionResult> {
+        return safeCall(logger, TAG) {
+            val json = buildDeleteMessagesJson(ids)
+            val httpRequest = Request.Builder()
+                .url(buildUrl(DELETE_MESSAGES_PATH))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "deleteMessages request: $httpRequest")
+            logger.debug(TAG, "deleteMessages payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "deleteMessages failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "deleteMessages success: $bodyString")
+                parseDeletionResult(bodyString)
+            }
+        }
+    }
+
+
+    private fun buildDeleteMessagesJson(ids: List<String>): JSONObject {
+        return JSONObject().apply {
+            put("ids", JSONArray(ids))
+        }
+    }
+
+
+    private fun parseDeletionResult(bodyString: String): MessageDeletionResult {
+        val json = JSONObject(bodyString)
+
+        val deletedAt = json.optLong("deleted_at")
+            .takeIf { json.has("deleted_at") }
+
+        val deletedIds = parseStringArray(json.optJSONArray("deleted_ids"))
+        val skipped = parseSkippedArray(json.optJSONArray("skipped"))
+
+        return MessageDeletionResult(
+            deletedAt = deletedAt,
+            deletedIds = deletedIds,
+            skipped = skipped
+        )
+    }
+
+
+    private fun parseStringArray(array: JSONArray?): List<String> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val value = array.optString(i)
+                if (value.isNotEmpty()) add(value)
+            }
+        }
+
+
+    private fun parseSkippedArray(array: JSONArray?): List<SkippedMessage> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val id = obj.optString("id")
+                if (id.isNullOrEmpty()) continue
+
+                add(
+                    SkippedMessage(
+                        id = id,
+                        reason = SkippedMessageReason.from(obj.optString("reason"))
+                    )
+                )
+            }
+        }
 
 
     private fun registerDevice(pushToken: String): Result<Unit> {
