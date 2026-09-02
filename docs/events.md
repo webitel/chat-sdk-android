@@ -78,6 +78,8 @@ See [Message Deletion](message-deletion.md) for details on `Deleted`.
 
 See [Reactions](reactions.md) for details on `ReactionsChanged`.
 
+See [Message Reply](message-reply.md) for details on `Message.reply`.
+
 ### Dialog events
 
 ```kotlin
