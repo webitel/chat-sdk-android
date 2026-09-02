@@ -148,17 +148,12 @@ internal class DialogImpl(
     internal fun applyEdit(message: MessageDto): MessageDto {
         val current = snapshot
         val last = current.lastMessage
+        val sameMessage = last?.id == message.id
 
-        val merged = if (last?.id == message.id && message.reactions.isEmpty()) {
-            message.copy(reactions = last.reactions)
-        } else {
-            message
+        if (sameMessage) {
+            snapshot = current.copy(lastMessage = message)
         }
 
-        if (last?.id == message.id) {
-            snapshot = current.copy(lastMessage = merged)
-        }
-
-        return merged
+        return message
     }
 }

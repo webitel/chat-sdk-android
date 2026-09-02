@@ -11,5 +11,11 @@ data class MessageOptions(
     val content: SendContent,
 
     /** Client-generated identifier used to match sent messages. */
-    val sendId: String = UUID.randomUUID().toString()
+    val sendId: String = UUID.randomUUID().toString(),
+
+    /**
+     * Identifier of the message being replied to, or `null` if this
+     * message is not a reply.
+     */
+    val replyToMessageId: String? = null
 )

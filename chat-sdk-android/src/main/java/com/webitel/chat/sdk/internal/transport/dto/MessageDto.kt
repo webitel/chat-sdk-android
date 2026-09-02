@@ -11,4 +11,5 @@ internal data class MessageDto(
     val content: MessageContent,
     val sendId: String?,
     val reactions: List<MessageReactionDto> = emptyList(),
+    val replyTo: MessageReplyDto? = null,
 )

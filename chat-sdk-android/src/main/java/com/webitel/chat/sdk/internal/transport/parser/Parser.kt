@@ -15,6 +15,7 @@ import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageReplyDto
 import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.dto.TypingDto
 import org.json.JSONArray
@@ -39,6 +40,7 @@ internal class Parser {
 
         val content = parseContent(messageObj) ?: return null
         val reactions = parseReactionsArray(messageObj.optJSONArray("reactions"))
+        val replyTo = parseReplyTo(messageObj.optJSONObject("reply_to"))
         return MessageDto(
             id = id,
             dialogId = dialogId,
@@ -47,7 +49,41 @@ internal class Parser {
             from = sender,
             content = content,
             sendId = sendId,
-            reactions = reactions
+            reactions = reactions,
+            replyTo = replyTo
+        )
+    }
+
+
+    private fun parseReplyTo(obj: JSONObject?): MessageReplyDto? {
+        obj ?: return null
+
+        val id = obj.optString("message_id")
+        if (id.isNullOrEmpty()) return null
+
+        val sender = parseParticipant(
+            obj.optJSONObject("sender")
+        ) ?: return null
+
+        val type = obj.optString("type")
+        val body = obj.optString("body").takeIf { it.isNotEmpty() }
+        val createdAt = obj.optLong("created_at")
+
+        val attachmentMime = obj.optString("attachment_mime").takeIf { it.isNotEmpty() }
+        val attachmentName = obj.optString("attachment_name").takeIf { it.isNotEmpty() }
+        val attachmentAddress = obj.optString("attachment_address").takeIf { it.isNotEmpty() }
+        val isDeleted = obj.optBoolean("is_deleted")
+
+        return MessageReplyDto(
+            messageId = id,
+            sender = sender,
+            type = type,
+            body = body,
+            createdAt = createdAt,
+            attachmentMime = attachmentMime,
+            attachmentName = attachmentName,
+            attachmentAddress = attachmentAddress,
+            isDeleted = isDeleted
         )
     }
 

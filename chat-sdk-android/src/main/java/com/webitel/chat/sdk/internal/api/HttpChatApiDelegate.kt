@@ -1101,6 +1101,7 @@ internal class HttpChatApiDelegate(
     ): JSONObject {
         return JSONObject().apply {
             put("send_id", options.sendId)
+            options.replyToMessageId?.let { put("reply_to_message_id", it) }
             put("to", JSONObject().apply {
                 when (target) {
                     is MessageTarget.Contact -> {

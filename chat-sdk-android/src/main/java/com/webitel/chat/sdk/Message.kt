@@ -66,7 +66,13 @@ data class Message(
      *
      * Kept up to date via [MessageEvent.ReactionsChanged] while realtime is active.
      */
-    val reactions: List<MessageReaction> = emptyList()
+    val reactions: List<MessageReaction> = emptyList(),
+
+    /**
+     * Reference to the message this message replies to, or `null` if this
+     * message is not a reply.
+     */
+    val reply: MessageReply? = null
 ) {
 
     /**
