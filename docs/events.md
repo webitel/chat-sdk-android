@@ -80,6 +80,8 @@ See [Reactions](reactions.md) for details on `ReactionsChanged`.
 
 See [Message Reply](message-reply.md) for details on `Message.reply`.
 
+See [Message Forward](message-forward.md) for details on `Message.forwardOrigin`.
+
 ### Dialog events
 
 ```kotlin
