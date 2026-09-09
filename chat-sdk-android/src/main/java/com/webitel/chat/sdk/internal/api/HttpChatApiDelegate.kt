@@ -8,6 +8,7 @@ import com.webitel.chat.sdk.DialogFilter
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DialogType
 import com.webitel.chat.sdk.EditMessageResult
+import com.webitel.chat.sdk.ForwardMessagesResult
 import com.webitel.chat.sdk.HistoryCursor
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
@@ -67,6 +68,7 @@ internal class HttpChatApiDelegate(
         const val SEND_ACTION_PATH = "api/v1/messages/interactive"
         const val REACTIONS_PATH = "api/v1/messages"
         const val DELETE_MESSAGES_PATH = "api/v1/messages/delete"
+        const val FORWARD_MESSAGES_PATH = "api/v1/messages/forward"
         val JSON = "application/json".toMediaType()
     }
 
@@ -439,6 +441,71 @@ internal class HttpChatApiDelegate(
         execution.api {
             onComplete(deleteMessages(ids))
         }
+    }
+
+
+    override fun forwardMessages(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String,
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
+    ) {
+        execution.api {
+            onComplete(forwardMessages(ids, target, sendId))
+        }
+    }
+
+
+    private fun forwardMessages(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String
+    ): Result<ForwardMessagesResult> {
+        return safeCall(logger, TAG) {
+            val json = buildForwardMessagesJson(ids, target, sendId)
+            val httpRequest = Request.Builder()
+                .url(buildUrl(FORWARD_MESSAGES_PATH))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "forwardMessages request: $httpRequest")
+            logger.debug(TAG, "forwardMessages payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "forwardMessages failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "forwardMessages success: $bodyString")
+                parseForwardMessagesResult(bodyString)
+            }
+        }
+    }
+
+
+    private fun buildForwardMessagesJson(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String
+    ): JSONObject {
+        return JSONObject().apply {
+            put("message_ids", JSONArray(ids))
+            put("send_id", sendId)
+            put("to", buildTargetJson(target))
+        }
+    }
+
+
+    private fun parseForwardMessagesResult(bodyString: String): ForwardMessagesResult {
+        val json = JSONObject(bodyString)
+
+        return ForwardMessagesResult(
+            ids = parseStringArray(json.optJSONArray("ids")),
+            skipped = parseSkippedArray(json.optJSONArray("skipped")),
+            threadId = json.optString("thread_id")
+        )
     }
 
 
@@ -1102,20 +1169,25 @@ internal class HttpChatApiDelegate(
         return JSONObject().apply {
             put("send_id", options.sendId)
             options.replyToMessageId?.let { put("reply_to_message_id", it) }
-            put("to", JSONObject().apply {
-                when (target) {
-                    is MessageTarget.Contact -> {
-                        put("contact", JSONObject().apply {
-                            put("iss", target.contactId.iss)
-                            put("sub", target.contactId.sub)
-                        })
-                    }
+            put("to", buildTargetJson(target))
+        }
+    }
 
-                    is MessageTarget.Dialog -> {
-                        put("thread_id", target.id)
-                    }
+
+    private fun buildTargetJson(target: MessageTarget): JSONObject {
+        return JSONObject().apply {
+            when (target) {
+                is MessageTarget.Contact -> {
+                    put("contact", JSONObject().apply {
+                        put("iss", target.contactId.iss)
+                        put("sub", target.contactId.sub)
+                    })
                 }
-            })
+
+                is MessageTarget.Dialog -> {
+                    put("thread_id", target.id)
+                }
+            }
         }
     }
 }

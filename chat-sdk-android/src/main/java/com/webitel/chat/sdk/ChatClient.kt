@@ -2,6 +2,7 @@ package com.webitel.chat.sdk
 
 import android.app.Application
 import com.webitel.chat.sdk.internal.client.ChatClientBuilder
+import java.util.UUID
 
 
 interface ChatClient {
@@ -121,6 +122,30 @@ interface ChatClient {
     fun deleteMessages(
         ids: List<String>,
         onComplete: (Result<MessageDeletionResult>) -> Unit
+    )
+
+
+    /**
+     * Forwards messages to another dialog or contact.
+     *
+     * This is a batch operation — it is not scoped to a particular dialog,
+     * so ids from different dialogs may be passed together. A per-message
+     * issue (the message doesn't exist, or the current user isn't allowed
+     * to forward it, etc.) does not fail the whole call — it's reported per
+     * id via [ForwardMessagesResult.skipped], with the reason given by
+     * [SkippedMessageReason]. A general failure (e.g. the caller isn't
+     * authenticated) fails the whole call instead, via [onComplete].
+     *
+     * @param ids Identifiers of the messages to forward
+     * @param target Destination of the forwarded messages (dialog or contact)
+     * @param sendId Client-generated identifier used to match forwarded messages
+     * @param onComplete Callback invoked with the result of the operation
+     */
+    fun forwardMessages(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String = UUID.randomUUID().toString(),
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
     )
 
 

@@ -5,6 +5,7 @@ import com.webitel.chat.sdk.ChatEventListener
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogType
 import com.webitel.chat.sdk.EditMessageResult
+import com.webitel.chat.sdk.ForwardMessagesResult
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
@@ -81,6 +82,15 @@ internal class DialogImpl(
         onComplete: (Result<MessageDeletionResult>) -> Unit
     ) {
         client.deleteMessages(ids, onComplete)
+    }
+
+
+    override fun forwardMessages(
+        ids: List<String>,
+        sendId: String,
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
+    ) {
+        client.forwardMessages(ids, MessageTarget.Dialog(id), sendId, onComplete)
     }
 
 

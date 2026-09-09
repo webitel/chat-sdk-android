@@ -72,7 +72,12 @@ data class Message(
      * Reference to the message this message replies to, or `null` if this
      * message is not a reply.
      */
-    val reply: MessageReply? = null
+    val reply: MessageReply? = null,
+
+    /**
+     * Original source if this message was forwarded, or `null` otherwise.
+     */
+    val forwardOrigin: MessageForwardOrigin? = null
 ) {
 
     /**

@@ -1,5 +1,7 @@
 package com.webitel.chat.sdk
 
+import java.util.UUID
+
 
 /**
  * Represents a chat dialog (conversation).
@@ -148,6 +150,29 @@ interface Dialog {
     fun deleteMessages(
         ids: List<String>,
         onComplete: (Result<MessageDeletionResult>) -> Unit
+    )
+
+
+    /**
+     * Forwards messages into this dialog.
+     *
+     * This is a batch operation — it is not scoped to this dialog, so any
+     * accessible message id can be passed regardless of which dialog it
+     * belongs to. A per-message issue (the message doesn't exist, or the
+     * current user isn't allowed to forward it, etc.) does not fail the
+     * whole call — it's reported per id via [ForwardMessagesResult.skipped],
+     * with the reason given by [SkippedMessageReason]. A general failure
+     * (e.g. the caller isn't authenticated) fails the whole call instead,
+     * via [onComplete].
+     *
+     * @param ids Identifiers of the messages to forward
+     * @param sendId Client-generated identifier used to match forwarded messages
+     * @param onComplete Callback invoked with the result of the operation
+     */
+    fun forwardMessages(
+        ids: List<String>,
+        sendId: String = UUID.randomUUID().toString(),
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
     )
 
 

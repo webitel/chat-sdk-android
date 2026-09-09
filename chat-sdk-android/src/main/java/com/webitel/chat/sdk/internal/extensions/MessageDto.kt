@@ -1,10 +1,13 @@
 package com.webitel.chat.sdk.internal.extensions
 
 import com.webitel.chat.sdk.Message
+import com.webitel.chat.sdk.MessageForwardOrigin
+import com.webitel.chat.sdk.MessageForwardOriginKind
 import com.webitel.chat.sdk.MessageReaction
 import com.webitel.chat.sdk.MessageReply
 import com.webitel.chat.sdk.MessageReplyContent
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageForwardOriginDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReplyDto
 
@@ -26,7 +29,8 @@ internal fun MessageDto.toDomain(
         isOutgoing = isOutgoing,
         sendId = sendId,
         reactions = reactions.map { it.toDomain() },
-        reply = replyTo?.toDomain()
+        reply = replyTo?.toDomain(),
+        forwardOrigin = forwardOrigin?.toDomain()
     )
 }
 
@@ -79,4 +83,31 @@ private fun MessageReplyDto.toReplyContent(): MessageReplyContent = when (type) 
     "interactive" -> MessageReplyContent.Interactive(body)
 
     else -> MessageReplyContent.Unsupported(type = type, text = body)
+}
+
+
+internal fun MessageForwardOriginDto.toDomain(): MessageForwardOrigin {
+    return MessageForwardOrigin(
+        originalSentAt = originalSentAt,
+        kind = toForwardOriginKind()
+    )
+}
+
+
+private fun MessageForwardOriginDto.toForwardOriginKind(): MessageForwardOriginKind = when (kind) {
+    "FORWARD_ORIGIN_KIND_INTERNAL" -> MessageForwardOriginKind.InternalUser(
+        senderId = senderId.orEmpty(),
+        senderName = senderName,
+        sourceMessageId = sourceMessageId.orEmpty()
+    )
+
+    "FORWARD_ORIGIN_KIND_EXTERNAL_USER" -> MessageForwardOriginKind.ExternalUser(
+        senderName = senderName.orEmpty()
+    )
+
+    "FORWARD_ORIGIN_KIND_EXTERNAL_HIDDEN_USER" -> MessageForwardOriginKind.ExternalHiddenUser
+
+    "FORWARD_ORIGIN_KIND_EXTERNAL_CHAT" -> MessageForwardOriginKind.ExternalChat(name = senderName)
+
+    else -> MessageForwardOriginKind.Unsupported(rawKind = kind, senderName = senderName)
 }

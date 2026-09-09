@@ -5,6 +5,7 @@ import com.webitel.chat.sdk.ContactId
 import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.EditMessageResult
+import com.webitel.chat.sdk.ForwardMessagesResult
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.MessageAction
@@ -74,6 +75,13 @@ internal interface ChatApiDelegate {
     fun deleteMessages(
         ids: List<String>,
         onComplete: (Result<MessageDeletionResult>) -> Unit
+    )
+
+    fun forwardMessages(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String,
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
     )
 
     fun editMessage(

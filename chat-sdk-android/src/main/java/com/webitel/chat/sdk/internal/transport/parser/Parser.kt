@@ -13,6 +13,7 @@ import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageForwardOriginDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReplyDto
@@ -41,6 +42,7 @@ internal class Parser {
         val content = parseContent(messageObj) ?: return null
         val reactions = parseReactionsArray(messageObj.optJSONArray("reactions"))
         val replyTo = parseReplyTo(messageObj.optJSONObject("reply_to"))
+        val forwardOrigin = parseForwardOrigin(messageObj.optJSONObject("forward_origin"))
         return MessageDto(
             id = id,
             dialogId = dialogId,
@@ -50,7 +52,8 @@ internal class Parser {
             content = content,
             sendId = sendId,
             reactions = reactions,
-            replyTo = replyTo
+            replyTo = replyTo,
+            forwardOrigin = forwardOrigin
         )
     }
 
@@ -84,6 +87,25 @@ internal class Parser {
             attachmentName = attachmentName,
             attachmentAddress = attachmentAddress,
             isDeleted = isDeleted
+        )
+    }
+
+
+    private fun parseForwardOrigin(obj: JSONObject?): MessageForwardOriginDto? {
+        obj ?: return null
+
+        val kind = obj.optString("kind")
+        val senderId = obj.optString("sender_id").takeIf { it.isNotEmpty() }
+        val senderName = obj.optString("sender_name").takeIf { it.isNotEmpty() }
+        val sourceMessageId = obj.optString("source_message_id").takeIf { it.isNotEmpty() }
+        val originalSentAt = obj.optLong("original_sent_at")
+
+        return MessageForwardOriginDto(
+            kind = kind,
+            senderId = senderId,
+            senderName = senderName,
+            sourceMessageId = sourceMessageId,
+            originalSentAt = originalSentAt
         )
     }
 

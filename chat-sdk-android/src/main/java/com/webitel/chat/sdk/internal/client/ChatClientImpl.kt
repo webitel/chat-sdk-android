@@ -15,6 +15,7 @@ import com.webitel.chat.sdk.DialogRequest
 import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.DownloadRequest
 import com.webitel.chat.sdk.EditMessageResult
+import com.webitel.chat.sdk.ForwardMessagesResult
 import com.webitel.chat.sdk.HistoryRequest
 import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.Message
@@ -156,6 +157,21 @@ internal class ChatClientImpl(
         callWithAuthRetry(
             call = { callback ->
                 api.deleteMessages(ids, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun forwardMessages(
+        ids: List<String>,
+        target: MessageTarget,
+        sendId: String,
+        onComplete: (Result<ForwardMessagesResult>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.forwardMessages(ids, target, sendId, callback)
             },
             onComplete = onComplete
         )
