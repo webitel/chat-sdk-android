@@ -12,6 +12,8 @@ import com.webitel.chat.sdk.Message
 import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageOptions
+import com.webitel.chat.sdk.MessageSearchRequest
+import com.webitel.chat.sdk.MessageSearchSlice
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Participant
 import com.webitel.chat.sdk.ReactionResult
@@ -108,6 +110,14 @@ internal class DialogImpl(
         onComplete: (Result<HistorySlice<Message>>) -> Unit
     ) {
         client.getHistory(id, request, onComplete)
+    }
+
+
+    override fun searchMessages(
+        request: MessageSearchRequest,
+        onComplete: (Result<MessageSearchSlice>) -> Unit
+    ) {
+        client.searchMessages(request, id, onComplete)
     }
 
 

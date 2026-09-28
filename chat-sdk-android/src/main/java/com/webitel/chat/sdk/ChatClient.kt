@@ -227,6 +227,25 @@ interface ChatClient {
 
 
     /**
+     * Searches messages, optionally scoped to a specific dialog.
+     *
+     * Supports pagination via [MessageSearchRequest.cursor], using
+     * [MessageSearchSlice.olderCursor] or [MessageSearchSlice.newerCursor]
+     * from the previous result.
+     *
+     * @param request Search request containing the query and search parameters
+     * @param dialogId Identifier of the dialog to search within. When `null`,
+     * searches across all dialogs of the current user.
+     * @param onComplete Callback invoked with the matching messages or an error
+     */
+    fun searchMessages(
+        request: MessageSearchRequest,
+        dialogId: String? = null,
+        onComplete: (Result<MessageSearchSlice>) -> Unit
+    )
+
+
+    /**
      * Starts an asynchronous file upload operation.
      *
      * Upload progress and completion events are delivered

@@ -24,6 +24,8 @@ import com.webitel.chat.sdk.MessageDeletion
 import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageEvent
 import com.webitel.chat.sdk.MessageOptions
+import com.webitel.chat.sdk.MessageSearchRequest
+import com.webitel.chat.sdk.MessageSearchSlice
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
 import com.webitel.chat.sdk.ActivityEvent
@@ -370,6 +372,31 @@ internal class ChatClientImpl(
                             items = slice.items.map { it.toDomain(currentUserId) },
                             newerCursor = slice.newerCursor,
                             olderCursor = slice.olderCursor
+                        )
+                    }
+                    callback(mapped)
+                }
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun searchMessages(
+        request: MessageSearchRequest,
+        dialogId: String?,
+        onComplete: (Result<MessageSearchSlice>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.searchMessages(dialogId, request) { resultDto ->
+
+                    val mapped = resultDto.map { result ->
+                        val currentUserId = authManager.currentContact?.id
+                        MessageSearchSlice(
+                            items = result.items.map { it.toDomain(currentUserId) },
+                            newerCursor = result.newerCursor,
+                            olderCursor = result.olderCursor
                         )
                     }
                     callback(mapped)

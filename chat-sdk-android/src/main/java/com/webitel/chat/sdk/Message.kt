@@ -84,5 +84,5 @@ data class Message(
      * Indicates whether the message was edited after creation.
      */
     val isEdited: Boolean
-        get() = editedAt != null
+        get() = editedAt != null && editedAt > createdAt
 }

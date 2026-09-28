@@ -15,12 +15,15 @@ import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageOptions
+import com.webitel.chat.sdk.MessageSearchCursor
+import com.webitel.chat.sdk.MessageSearchRequest
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.MoveDirection
 import com.webitel.chat.sdk.Page
 import com.webitel.chat.sdk.ReactionAction
 import com.webitel.chat.sdk.ReactionResult
 import com.webitel.chat.sdk.SendAttachment
+import com.webitel.chat.sdk.SearchDirection
 import com.webitel.chat.sdk.SendContent
 import com.webitel.chat.sdk.SkippedMessage
 import com.webitel.chat.sdk.SkippedMessageReason
@@ -33,6 +36,7 @@ import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageSearchResultDto
 import com.webitel.chat.sdk.internal.transport.http.OkHttpCancellable
 import com.webitel.chat.sdk.internal.transport.http.safeCall
 import com.webitel.chat.sdk.internal.transport.parser.Parser
@@ -69,6 +73,7 @@ internal class HttpChatApiDelegate(
         const val REACTIONS_PATH = "api/v1/messages"
         const val DELETE_MESSAGES_PATH = "api/v1/messages/delete"
         const val FORWARD_MESSAGES_PATH = "api/v1/messages/forward"
+        const val SEARCH_MESSAGES_PATH = "api/v1/messages/search"
         val JSON = "application/json".toMediaType()
     }
 
@@ -268,6 +273,44 @@ internal class HttpChatApiDelegate(
                 override fun onResponse(call: Call, response: Response) {
                     response.use { res ->
                         onComplete(parseHistoryResponse(res, request))
+                    }
+                }
+            })
+        }
+    }
+
+
+    override fun searchMessages(
+        dialogId: String?,
+        request: MessageSearchRequest,
+        onComplete: (Result<MessageSearchResultDto>) -> Unit
+    ) {
+        execution.api {
+            val call = runCatching {
+                val httpRequest = Request.Builder()
+                    .url(buildSearchMessagesUrl(dialogId, request))
+                    .get()
+                    .build()
+
+                logger.debug(TAG, "searchMessages: $httpRequest")
+
+                httpClient.newCall(httpRequest)
+            }.getOrElse { error ->
+                onComplete(Result.failure(error.toChatError()))
+                return@api
+            }
+
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    logger.error(TAG,
+                        "searchMessages: onFailure ${e.message.toString()}"
+                    )
+                    onComplete(Result.failure(e.toChatError()))
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use { res ->
+                        onComplete(parseSearchMessagesResponse(res))
                     }
                 }
             })
@@ -950,6 +993,71 @@ internal class HttpChatApiDelegate(
     }
 
 
+    private fun parseSearchMessagesResponse(
+        res: Response
+    ): Result<MessageSearchResultDto> {
+        val bodyString = res.body?.string()
+        logger.debug(TAG, "parseSearchMessagesResponse: $bodyString")
+
+        if (!res.isSuccessful) {
+            logger.error(
+                TAG,
+                "parseSearchMessagesResponse: Code=${res.code} $bodyString"
+            )
+            return Result.failure(
+                ChatError.fromCode(res.code, bodyString)
+            )
+        }
+
+        if (bodyString.isNullOrEmpty()) {
+            logger.error(
+                TAG,
+                "parseSearchMessagesResponse: Empty response body. Code=${res.code}"
+            )
+            return Result.failure(
+                ChatError.fromCode(ChatError.UNKNOWN_CODE,
+                    "Empty response body")
+            )
+        }
+
+        return runCatching {
+            val root = JSONObject(bodyString)
+
+            val items = parseMessagesArray(root.optJSONArray("items"))
+                .reversed()
+
+            MessageSearchResultDto(
+                items = items,
+                newerCursor = parseSearchCursor(
+                    root.optJSONObject("prev_cursor"),
+                    SearchDirection.NEWER
+                ),
+                olderCursor = parseSearchCursor(
+                    root.optJSONObject("next_cursor"),
+                    SearchDirection.OLDER
+                )
+            )
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { Result.failure(it.toChatError()) }
+        )
+    }
+
+
+    private fun parseSearchCursor(
+        obj: JSONObject?,
+        direction: SearchDirection
+    ): MessageSearchCursor? {
+        if (obj == null) return null
+        val id = obj.optString("id")
+        if (id.isEmpty()) return null
+        return MessageSearchCursor(
+            id,
+            direction
+        )
+    }
+
+
     private fun parseContactsResponse(
         res: Response,
         request: ContactRequest
@@ -1047,6 +1155,37 @@ internal class HttpChatApiDelegate(
                     addQueryParameter(
                         "cursor.before",
                         if (cursor.direction == MoveDirection.NEWER) "true" else "false"
+                    )
+                }
+                if (clientContext.port > 0)
+                    port(clientContext.port)
+            }
+            .build()
+
+
+    private fun buildSearchMessagesUrl(
+        dialogId: String?,
+        request: MessageSearchRequest
+    ): HttpUrl =
+        HttpUrl.Builder()
+            .scheme(clientContext.scheme)
+            .host(clientContext.host)
+            .addPathSegments(SEARCH_MESSAGES_PATH)
+            .addQueryParameter("q", request.query)
+            .addQueryParameter("size", request.limit.coerceIn(1, 100).toString())
+            .apply {
+                dialogId?.let {
+                    addQueryParameter("thread_id", it)
+                }
+
+                addArray("sender_ids", request.senderIds.toList())
+                addArray("types", request.contentTypes.map { it.code.toString() })
+
+                request.cursor?.let { cursor ->
+                    addQueryParameter("cursor.id", cursor.messageId)
+                    addQueryParameter(
+                        "cursor.before",
+                        if (cursor.direction == SearchDirection.NEWER) "true" else "false"
                     )
                 }
                 if (clientContext.port > 0)

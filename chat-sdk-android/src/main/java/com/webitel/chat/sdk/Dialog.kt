@@ -212,6 +212,18 @@ interface Dialog {
 
 
     /**
+     * Searches messages within this dialog.
+     *
+     * @param request Search request containing the query and search parameters
+     * @param onComplete Callback invoked with the matching messages or an error
+     */
+    fun searchMessages(
+        request: MessageSearchRequest,
+        onComplete: (Result<MessageSearchSlice>) -> Unit
+    )
+
+
+    /**
      * Registers a dialog-scoped chat event listener.
      *
      * The listener will receive only events related to this dialog

@@ -11,6 +11,7 @@ import com.webitel.chat.sdk.HistorySlice
 import com.webitel.chat.sdk.MessageAction
 import com.webitel.chat.sdk.MessageDeletionResult
 import com.webitel.chat.sdk.MessageOptions
+import com.webitel.chat.sdk.MessageSearchRequest
 import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
 import com.webitel.chat.sdk.ReactionResult
@@ -18,6 +19,7 @@ import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageSearchResultDto
 
 internal interface ChatApiDelegate {
 
@@ -46,6 +48,12 @@ internal interface ChatApiDelegate {
         dialogId: String,
         request: HistoryRequest,
         onComplete: (Result<HistorySlice<MessageDto>>) -> Unit
+    )
+
+    fun searchMessages(
+        dialogId: String?,
+        request: MessageSearchRequest,
+        onComplete: (Result<MessageSearchResultDto>) -> Unit
     )
 
     fun registerDevice(
