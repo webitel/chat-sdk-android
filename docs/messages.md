@@ -213,3 +213,5 @@ Cursors can also be created manually. This is useful, for example, after reconne
 - set direction to MoveDirection.NEWER  
 
 This allows checking whether new messages after the connection was restored.
+
+See [Message Search](message-search.md) for searching messages by text.
