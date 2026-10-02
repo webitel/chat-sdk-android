@@ -8,6 +8,7 @@ import com.webitel.chat.sdk.UploadRequest
 internal interface FileUploader {
     fun upload(
         request: UploadRequest,
-        listener: UploadListener
+        listener: UploadListener,
+        task: TransferTaskImpl
     ): Cancellable
 }
