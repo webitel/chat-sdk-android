@@ -97,8 +97,8 @@ internal class HttpFileDownloader(
                 }
             }
             .addPathSegments(DOWNLOAD_PATH)
-            .addPathSegments(request.fileId)
-            .addPathSegments("stream")
+            .addPathSegment(request.fileId)
+            .addPathSegment("stream")
             .build()
 
         return Request.Builder()

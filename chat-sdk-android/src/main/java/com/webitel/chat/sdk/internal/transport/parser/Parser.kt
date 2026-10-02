@@ -8,23 +8,44 @@ import com.webitel.chat.sdk.ChatKeyboardRow
 import com.webitel.chat.sdk.ChatKeyboardSection
 import com.webitel.chat.sdk.MessageAttachment
 import com.webitel.chat.sdk.MessageContent
+import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
+import com.webitel.chat.sdk.internal.transport.dto.MemberChangeDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageForwardOriginDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReplyDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageStatusEventDto
 import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
+import com.webitel.chat.sdk.internal.transport.dto.ReadStateDto
+import com.webitel.chat.sdk.internal.transport.dto.ThreadUpdatesDto
 import com.webitel.chat.sdk.internal.transport.dto.TypingDto
+import com.webitel.chat.sdk.internal.transport.dto.UpdatesResponseDto
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 
 internal class Parser {
-    fun parseMessage(messageObj: JSONObject?, participantKey: String = "sender"): MessageDto? {
+
+    private companion object {
+        const val TAG = "Parser"
+    }
+
+
+    /**
+     * @param fallbackDialogId Dialog id used when the payload omits `thread_id`
+     * (e.g. messages nested inside an updates thread).
+     */
+    fun parseMessage(
+        messageObj: JSONObject?,
+        participantKey: String = "sender",
+        fallbackDialogId: String? = null
+    ): MessageDto? {
         messageObj ?: return null
         val sender = parseParticipant(
             messageObj.optJSONObject(participantKey)
@@ -34,6 +55,9 @@ internal class Parser {
         if (id.isNullOrEmpty()) return null
 
         val dialogId = messageObj.optString("thread_id")
+            .takeIf { it.isNotEmpty() }
+            ?: fallbackDialogId
+            ?: ""
         val createdAt = messageObj.optLong("created_at")
         val updatedAt = messageObj.optLong("edited_at")
             .takeIf { messageObj.has("edited_at") }
@@ -53,7 +77,8 @@ internal class Parser {
             sendId = sendId,
             reactions = reactions,
             replyTo = replyTo,
-            forwardOrigin = forwardOrigin
+            forwardOrigin = forwardOrigin,
+            sequence = messageObj.flexibleLongOrNull("seq")
         )
     }
 
@@ -247,16 +272,158 @@ internal class Parser {
         val members = parseParticipantArray(obj.optJSONArray("members"))
 
         val lastMsgObj = obj.optJSONObject("last_msg")
-        val lastMessage = parseMessage(lastMsgObj)
+        val lastMessage = parseMessage(lastMsgObj, fallbackDialogId = id)
 
         return DialogDto(
             id = id,
             subject = subject,
             type = type,
             members = members,
-            lastMessage = lastMessage
+            lastMessage = lastMessage,
+            readStates = parseReadStates(obj.optJSONArray("read_states"))
         )
     }
+
+
+    fun parseMessageStatusEvent(obj: JSONObject?): MessageStatusEventDto? {
+        obj ?: return null
+
+        val dialogId = obj.optString("thread_id")
+        if (dialogId.isNullOrEmpty()) return null
+
+        val status = obj.optString("status")
+        if (status.isNullOrEmpty()) return null
+
+        val member = parseParticipant(
+            obj.optJSONObject("member")
+        ) ?: return null
+
+        val upToSeq = obj.flexibleLongOrNull("up_to_seq") ?: return null
+
+        return MessageStatusEventDto(
+            dialogId = dialogId,
+            status = status,
+            member = member,
+            upToSeq = upToSeq,
+            occurredAt = obj.flexibleLongOrNull("occurred_at")
+        )
+    }
+
+
+    fun parseUpdatesResponse(obj: JSONObject): UpdatesResponseDto {
+        val cursor = normalizeCursor(obj.opt("cursor"))
+            ?: throw JSONException("Missing updates cursor")
+
+        val threads = buildList {
+            val array = obj.optJSONArray("threads") ?: return@buildList
+
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                parseThreadUpdates(item)?.let(::add)
+            }
+        }
+
+        return UpdatesResponseDto(
+            cursor = cursor,
+            resync = obj.optBoolean("resync"),
+            hasMore = obj.optBoolean("has_more"),
+            threads = threads
+        )
+    }
+
+
+    private fun parseThreadUpdates(obj: JSONObject): ThreadUpdatesDto? {
+        val threadId = obj.optString("thread_id")
+        if (threadId.isNullOrEmpty()) return null
+
+        val dialog = obj.optJSONObject("dialog")?.let { dialogObj ->
+            parseDialog(dialogObj).also {
+                if (it == null) logger.warn(TAG, "Failed to parse dialog for thread $threadId")
+            }
+        }
+
+        // Messages inside a thread omit `thread_id`, so the enclosing
+        // thread id is used as fallback. Unparsable items are skipped.
+        val messages = buildList {
+            val array = obj.optJSONArray("messages") ?: return@buildList
+
+            for (i in 0 until array.length()) {
+                val message = parseMessage(array.optJSONObject(i), fallbackDialogId = threadId)
+
+                if (message == null) {
+                    logger.warn(TAG, "Failed to parse message in thread $threadId")
+                    continue
+                }
+
+                add(message)
+            }
+        }
+
+        val deletedMessageIds = buildList {
+            val array = obj.optJSONArray("deleted_message_ids") ?: return@buildList
+
+            for (i in 0 until array.length()) {
+                array.optString(i).takeIf { it.isNotEmpty() }?.let(::add)
+            }
+        }
+
+        val memberChanges = buildList {
+            val array = obj.optJSONArray("member_changes") ?: return@buildList
+
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                add(parseMemberChange(item))
+            }
+        }
+
+        return ThreadUpdatesDto(
+            threadId = threadId,
+            dialog = dialog,
+            unreadCount = obj.flexibleLongOrNull("unread_count")?.toInt() ?: 0,
+            messages = messages,
+            topMessage = parseMessage(obj.optJSONObject("top_message"), fallbackDialogId = threadId),
+            deletedMessageIds = deletedMessageIds,
+            readStates = parseReadStates(obj.optJSONArray("read_states")),
+            memberChanges = memberChanges,
+            left = obj.optBoolean("left")
+        )
+    }
+
+
+    private fun parseReadStates(array: JSONArray?): List<ReadStateDto> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+
+                add(
+                    ReadStateDto(
+                        memberId = obj.optString("member_id").takeIf { it.isNotEmpty() },
+                        member = parseParticipant(obj.optJSONObject("member")),
+                        deliveredUpToSeq = obj.flexibleLongOrNull("delivered_up_to_seq") ?: 0,
+                        readUpToSeq = obj.flexibleLongOrNull("read_up_to_seq") ?: 0
+                    )
+                )
+            }
+        }
+
+
+    private fun parseMemberChange(obj: JSONObject): MemberChangeDto =
+        MemberChangeDto(
+            action = obj.optString("action"),
+            member = parseParticipant(obj.optJSONObject("member")),
+            by = parseParticipant(obj.optJSONObject("by"))
+        )
+
+
+    /** Reads an Int64 sent either as a JSON number or a numeric string. */
+    private fun JSONObject.flexibleLongOrNull(key: String): Long? =
+        when (val value = opt(key)) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
+            else -> null
+        }
 
 
     private fun parseContent(obj: JSONObject): MessageContent? {

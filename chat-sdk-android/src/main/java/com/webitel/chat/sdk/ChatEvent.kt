@@ -147,6 +147,61 @@ sealed class DialogEvent : ChatEvent {
         override val dialogId: String,
         val dialog: Dialog
     ) : DialogEvent()
+
+    /**
+     * Emitted after the SDK recovers changes missed while
+     * the realtime connection was temporarily unavailable.
+     *
+     * Dispatched once per changed dialog after a reconnect.
+     * Dialogs created while offline are announced with [Created] first.
+     *
+     * Example usage:
+     * ```
+     * when (event) {
+     *     is DialogEvent.Synchronized -> {
+     *         messagesAdapter.upsert(event.changes.messages)
+     *         messagesAdapter.remove(event.changes.deletedMessageIds)
+     *     }
+     * }
+     * ```
+     */
+    data class Synchronized(
+        override val dialogId: String,
+        val changes: DialogSyncChanges
+    ) : DialogEvent()
+}
+
+
+/**
+ * Delivery/read receipts of dialog participants.
+ *
+ * Receipts are cumulative horizons: `Read(upToSequence = 108)` means every
+ * message with `Message.sequence <= 108` is read by [Read.member].
+ *
+ * The SDK advances [Dialog.participantStates] first and dispatches the event
+ * only when the horizon actually moved forward.
+ */
+sealed class ReceiptEvent : ChatEvent {
+
+    data class Delivered(
+        override val dialogId: String,
+        val member: Participant,
+        val upToSequence: Long
+    ) : ReceiptEvent()
+
+    data class Read(
+        override val dialogId: String,
+        val member: Participant,
+        val upToSequence: Long
+    ) : ReceiptEvent()
+
+    /**
+     * Reserved for future use — not yet emitted by the server.
+     */
+    data class DeliveryFailed(
+        override val dialogId: String,
+        val exception: DeliveryException
+    ) : ReceiptEvent()
 }
 
 

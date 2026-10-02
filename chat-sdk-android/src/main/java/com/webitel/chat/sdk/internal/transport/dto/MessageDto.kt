@@ -13,4 +13,5 @@ internal data class MessageDto(
     val reactions: List<MessageReactionDto> = emptyList(),
     val replyTo: MessageReplyDto? = null,
     val forwardOrigin: MessageForwardOriginDto? = null,
+    val sequence: Long? = null,
 )

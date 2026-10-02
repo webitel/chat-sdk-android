@@ -20,6 +20,8 @@ import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageSearchResultDto
+import com.webitel.chat.sdk.internal.transport.dto.ReadPosition
+import com.webitel.chat.sdk.internal.transport.dto.UpdatesResponseDto
 
 internal interface ChatApiDelegate {
 
@@ -73,6 +75,12 @@ internal interface ChatApiDelegate {
         onComplete: (Result<Unit>) -> Unit
     )
 
+    fun markAsRead(
+        dialogId: String,
+        position: ReadPosition,
+        onComplete: (Result<Unit>) -> Unit
+    )
+
     fun setReaction(
         messageId: String,
         emoji: String,
@@ -96,5 +104,10 @@ internal interface ChatApiDelegate {
         messageId: String,
         text: String,
         onComplete: (Result<EditMessageResult>) -> Unit
+    )
+
+    fun getUpdates(
+        cursor: String,
+        onComplete: (Result<UpdatesResponseDto>) -> Unit
     )
 }

@@ -8,6 +8,7 @@ import com.webitel.chat.sdk.internal.client.ExecutionContext
 import com.webitel.chat.sdk.internal.transport.http.HeaderInterceptor
 import com.webitel.chat.sdk.internal.transport.http.HeaderProvider
 import com.webitel.chat.sdk.internal.transport.parser.Parser
+import com.webitel.chat.sdk.internal.transport.parser.normalizeCursor
 import okhttp3.CertificatePinner
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,6 +50,7 @@ internal class WssRealtimeTransport(
     private companion object {
         const val TAG = "WssRealtimeTransport"
         const val WS_PATH = "/im/ws"
+        const val CURSOR_KEY = "updates_cursor"
     }
 
 
@@ -122,6 +124,18 @@ internal class WssRealtimeTransport(
 
 
     override fun onMessage(webSocket: WebSocket, text: String) {
+        // An exception escaping a listener makes OkHttp fail the socket:
+        // a malformed frame must be skipped, not cause a reconnect
+        try {
+            handleFrame(text)
+        } catch (t: Throwable) {
+            // The frame itself is not logged: it may contain message content
+            logger.error(TAG, "onMessage: failed to process frame, ignored: $t")
+        }
+    }
+
+
+    private fun handleFrame(text: String) {
         val json = JSONObject(text)
         logger.debug(TAG, "onMessage: received $text;")
 
@@ -137,25 +151,28 @@ internal class WssRealtimeTransport(
             return
         }
 
+        val cursor = extractCursor(payload, event)
+
         when (event) {
-            EventType.Connected -> handleConnected(payload)
+            EventType.Connected -> handleConnected(payload, cursor)
             EventType.Disconnected -> handleDisconnected(payload)
             EventType.Message -> {
                 json.optString("id")
                     .takeIf { it.isNotBlank() }
                     ?.let(::sendAck)
 
-                handleMessage(payload)
+                handleMessage(payload, cursor)
             }
             EventType.Typing -> handleTyping(payload)
-            EventType.MessageReaction -> handleMessageReaction(payload)
-            EventType.MessageDeleted -> handleMessageDeleted(payload)
-            EventType.MessageEdited -> handleMessageEdited(payload)
+            EventType.MessageReaction -> handleMessageReaction(payload, cursor)
+            EventType.MessageDeleted -> handleMessageDeleted(payload, cursor)
+            EventType.MessageEdited -> handleMessageEdited(payload, cursor)
+            EventType.MessageStatus -> handleMessageStatus(payload, cursor)
             EventType.Ack -> handleAck(payload)
             EventType.Error -> handleError(payload)
             EventType.Ping -> handlePing(payload)
             EventType.Unsupported -> handleUnsupported(payload)
-            EventType.DialogCreated -> handleDialogCreated(payload)
+            EventType.DialogCreated -> handleDialogCreated(payload, cursor)
         }
     }
 
@@ -183,8 +200,19 @@ internal class WssRealtimeTransport(
     }
 
 
-    private fun handleConnected(payload: JSONObject) {
+    private fun handleConnected(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleConnected: $payload")
+        realtimeListener?.onConnectedEvent(cursor)
+    }
+
+
+    /**
+     * Reads the updates cursor from the event body (`payload.<event>.updates_cursor`).
+     */
+    private fun extractCursor(payload: JSONObject, event: EventType): String? {
+        val body = payload.optJSONObject(event.value) ?: return null
+
+        return normalizeCursor(body.opt(CURSOR_KEY))
     }
 
 
@@ -215,7 +243,7 @@ internal class WssRealtimeTransport(
         }
 
 
-    private fun handleMessage(payload: JSONObject) {
+    private fun handleMessage(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleMessage: $payload")
 
         val messageObj = payload.optJSONObject("message_event")
@@ -225,7 +253,7 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onMessage(message)
+        realtimeListener?.onMessage(message, cursor)
     }
 
 
@@ -243,7 +271,7 @@ internal class WssRealtimeTransport(
     }
 
 
-    private fun handleMessageReaction(payload: JSONObject) {
+    private fun handleMessageReaction(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleMessageReaction: $payload")
 
         val obj = payload.optJSONObject("message_reaction_event")
@@ -253,11 +281,11 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onMessageReaction(event)
+        realtimeListener?.onMessageReaction(event, cursor)
     }
 
 
-    private fun handleMessageDeleted(payload: JSONObject) {
+    private fun handleMessageDeleted(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleMessageDeleted: $payload")
 
         val obj = payload.optJSONObject("message_deleted_event")
@@ -267,11 +295,11 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onMessageDeleted(event)
+        realtimeListener?.onMessageDeleted(event, cursor)
     }
 
 
-    private fun handleMessageEdited(payload: JSONObject) {
+    private fun handleMessageEdited(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleMessageEdited: $payload")
 
         val obj = payload.optJSONObject("message_edited_event")
@@ -281,7 +309,21 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onMessageEdited(message)
+        realtimeListener?.onMessageEdited(message, cursor)
+    }
+
+
+    private fun handleMessageStatus(payload: JSONObject, cursor: String?) {
+        logger.debug(TAG, "handleMessageStatus: $payload")
+
+        val obj = payload.optJSONObject("message_status_event")
+        val event = parser.parseMessageStatusEvent(obj)
+        if (event == null) {
+            logger.warn(TAG, "handleMessageStatus: Invalid payload, ignored")
+            return
+        }
+
+        realtimeListener?.onMessageStatus(event, cursor)
     }
 
 
@@ -300,7 +342,7 @@ internal class WssRealtimeTransport(
     }
 
 
-    private fun handleDialogCreated(payload: JSONObject) {
+    private fun handleDialogCreated(payload: JSONObject, cursor: String?) {
         logger.debug(TAG, "handleDialogCreated: $payload")
 
         val dialogObj = payload.optJSONObject("thread_created_event")
@@ -310,7 +352,7 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onNewDialog(dialog)
+        realtimeListener?.onNewDialog(dialog, cursor)
     }
 
 

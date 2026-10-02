@@ -23,6 +23,17 @@ interface Dialog {
     /** Last message sent in the dialog, if available. */
     val lastMessage: Message?
 
+    /**
+     * Current delivery/read horizons of dialog participants.
+     *
+     * Loaded with the dialog, advanced by [ReceiptEvent] and refreshed
+     * after a reconnect ([DialogEvent.Synchronized]). Never moves back.
+     */
+    val participantStates: List<ParticipantState>
+
+    /** Current known delivery failures. */
+    val deliveryExceptions: List<DeliveryException>
+
 
     /**
      * Sends a message to this dialog asynchronously.
@@ -103,6 +114,34 @@ interface Dialog {
      */
     fun sendTyping(
         request: TypingRequest = TypingRequest(),
+        onComplete: (Result<Unit>) -> Unit
+    )
+
+
+    /**
+     * Marks messages in this dialog as read up to and including
+     * the message with the given sequence.
+     *
+     * @param sequence Sequence of the last read message ([Message.sequence])
+     * @param onComplete Callback invoked with the result of the operation
+     */
+    fun markAsRead(
+        sequence: Long,
+        onComplete: (Result<Unit>) -> Unit
+    )
+
+
+    /**
+     * Marks messages in this dialog as read up to and including
+     * the given message.
+     *
+     * Use this when [Message.sequence] is not available.
+     *
+     * @param messageId Identifier of the last read message ([Message.id])
+     * @param onComplete Callback invoked with the result of the operation
+     */
+    fun markAsRead(
+        messageId: String,
         onComplete: (Result<Unit>) -> Unit
     )
 

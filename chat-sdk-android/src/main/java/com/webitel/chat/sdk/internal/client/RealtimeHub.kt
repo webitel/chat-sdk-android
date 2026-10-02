@@ -1,6 +1,7 @@
 package com.webitel.chat.sdk.internal.client
 
 import android.util.Log
+import com.webitel.chat.sdk.ChatClientListener
 import com.webitel.chat.sdk.ChatEvent
 import com.webitel.chat.sdk.ChatEventListener
 import com.webitel.chat.sdk.ConnectionListener
@@ -14,6 +15,7 @@ internal class RealtimeHub {
     private val dialogListeners =
         ConcurrentHashMap<String, CopyOnWriteArraySet<ChatEventListener>>()
     private val connectionListeners = CopyOnWriteArraySet<ConnectionListener>()
+    private val clientListeners = CopyOnWriteArraySet<ChatClientListener>()
 
     private var publishedState: ConnectionState = ConnectionState.Disconnected
 
@@ -82,6 +84,31 @@ internal class RealtimeHub {
 
     fun removeConnectionListener(listener: ConnectionListener) {
         connectionListeners -= listener
+    }
+
+
+    fun addClientListener(listener: ChatClientListener) {
+        clientListeners += listener
+    }
+
+
+    fun removeClientListener(listener: ChatClientListener) {
+        clientListeners -= listener
+    }
+
+
+    fun notifyResyncRequired() {
+        clientListeners.forEach { listener ->
+            try {
+                listener.onResyncRequired()
+            } catch (t: Throwable) {
+                logClientListenerCrash(
+                    scope = "client",
+                    event = "onResyncRequired",
+                    throwable = t
+                )
+            }
+        }
     }
 
 

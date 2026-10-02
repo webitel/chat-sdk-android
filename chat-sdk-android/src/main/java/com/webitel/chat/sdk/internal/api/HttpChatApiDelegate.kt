@@ -37,6 +37,8 @@ import com.webitel.chat.sdk.internal.transport.dto.ContactDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageSearchResultDto
+import com.webitel.chat.sdk.internal.transport.dto.ReadPosition
+import com.webitel.chat.sdk.internal.transport.dto.UpdatesResponseDto
 import com.webitel.chat.sdk.internal.transport.http.OkHttpCancellable
 import com.webitel.chat.sdk.internal.transport.http.safeCall
 import com.webitel.chat.sdk.internal.transport.parser.Parser
@@ -74,6 +76,7 @@ internal class HttpChatApiDelegate(
         const val DELETE_MESSAGES_PATH = "api/v1/messages/delete"
         const val FORWARD_MESSAGES_PATH = "api/v1/messages/forward"
         const val SEARCH_MESSAGES_PATH = "api/v1/messages/search"
+        const val UPDATES_PATH = "api/v1/updates"
         val JSON = "application/json".toMediaType()
     }
 
@@ -346,7 +349,7 @@ internal class HttpChatApiDelegate(
         return safeCall(logger, TAG) {
             val json = buildActionJson(action)
             val request = Request.Builder()
-                .url(buildUrl("$SEND_ACTION_PATH/$messageId/callback"))
+                .url(buildUrl(SEND_ACTION_PATH, messageId, "callback"))
                 .post(json.toString().toRequestBody(JSON))
                 .build()
 
@@ -384,7 +387,7 @@ internal class HttpChatApiDelegate(
         return safeCall(logger, TAG) {
             val json = buildTypingJson(request)
             val httpRequest = Request.Builder()
-                .url(buildUrl("$DIALOGS_PATH/$dialogId/typing"))
+                .url(buildUrl(DIALOGS_PATH, dialogId, "typing"))
                 .post(json.toString().toRequestBody(JSON))
                 .build()
 
@@ -412,6 +415,90 @@ internal class HttpChatApiDelegate(
     }
 
 
+    override fun markAsRead(
+        dialogId: String,
+        position: ReadPosition,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        execution.api {
+            onComplete(markAsRead(dialogId, position))
+        }
+    }
+
+
+    private fun markAsRead(
+        dialogId: String,
+        position: ReadPosition
+    ): Result<Unit> {
+        return safeCall(logger, TAG) {
+            val json = buildMarkAsReadJson(position)
+            val httpRequest = Request.Builder()
+                .url(buildUrl(DIALOGS_PATH, dialogId, "read"))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "markAsRead request: $httpRequest")
+            logger.debug(TAG, "markAsRead payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "markAsRead failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "markAsRead success: $bodyString")
+            }
+        }
+    }
+
+
+    /** Exactly one of `id` or `up_to_seq` is sent; the server treats them equally. */
+    private fun buildMarkAsReadJson(position: ReadPosition): JSONObject {
+        return JSONObject().apply {
+            when (position) {
+                is ReadPosition.Sequence -> put("up_to_seq", position.sequence.toString())
+                is ReadPosition.MessageId -> put("id", position.messageId)
+            }
+        }
+    }
+
+
+    override fun getUpdates(
+        cursor: String,
+        onComplete: (Result<UpdatesResponseDto>) -> Unit
+    ) {
+        execution.api {
+            onComplete(getUpdates(cursor))
+        }
+    }
+
+
+    private fun getUpdates(cursor: String): Result<UpdatesResponseDto> {
+        return safeCall(logger, TAG) {
+            val json = JSONObject().put("cursor", cursor)
+            val httpRequest = Request.Builder()
+                .url(buildUrl(UPDATES_PATH))
+                .post(json.toString().toRequestBody(JSON))
+                .build()
+
+            logger.debug(TAG, "getUpdates request: $httpRequest")
+            logger.debug(TAG, "getUpdates payload: $json")
+
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val bodyString = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    logger.error(TAG, "getUpdates failed: ${response.code} $bodyString")
+                    throw ChatError.fromCode(response.code, bodyString)
+                }
+
+                logger.debug(TAG, "getUpdates success: $bodyString")
+                parser.parseUpdatesResponse(JSONObject(bodyString))
+            }
+        }
+    }
+
+
     override fun setReaction(
         messageId: String,
         emoji: String,
@@ -432,7 +519,7 @@ internal class HttpChatApiDelegate(
         return safeCall(logger, TAG) {
             val json = buildReactionJson(emoji, sendId)
             val httpRequest = Request.Builder()
-                .url(buildUrl("$REACTIONS_PATH/$messageId/reaction"))
+                .url(buildUrl(REACTIONS_PATH, messageId, "reaction"))
                 .post(json.toString().toRequestBody(JSON))
                 .build()
 
@@ -567,7 +654,7 @@ internal class HttpChatApiDelegate(
         return safeCall(logger, TAG) {
             val json = buildEditMessageJson(text)
             val httpRequest = Request.Builder()
-                .url(buildUrl("$REACTIONS_PATH/$messageId"))
+                .url(buildUrl(REACTIONS_PATH, messageId))
                 .patch(json.toString().toRequestBody(JSON))
                 .build()
 
@@ -760,7 +847,8 @@ internal class HttpChatApiDelegate(
             "id",
             "subject",
             "kind",
-            "last_msg"
+            "last_msg",
+            "read_states"
         ).forEach {
             addQueryParameter("fields", it)
         }
@@ -800,7 +888,11 @@ internal class HttpChatApiDelegate(
     }
 
 
-    private fun buildUrl(path: String): HttpUrl =
+    /**
+     * @param segments Appended as single encoded segments: ids with
+     * `/` or `..` cannot change the target endpoint.
+     */
+    private fun buildUrl(path: String, vararg segments: String): HttpUrl =
         HttpUrl.Builder()
             .scheme(clientContext.scheme)
             .host(clientContext.host)
@@ -809,6 +901,7 @@ internal class HttpChatApiDelegate(
                     port(clientContext.port)
             }
             .addPathSegments(path)
+            .apply { segments.forEach(::addPathSegment) }
             .build()
 
 

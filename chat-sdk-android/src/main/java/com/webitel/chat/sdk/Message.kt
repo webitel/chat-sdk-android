@@ -77,7 +77,16 @@ data class Message(
     /**
      * Original source if this message was forwarded, or `null` otherwise.
      */
-    val forwardOrigin: MessageForwardOrigin? = null
+    val forwardOrigin: MessageForwardOrigin? = null,
+
+    /**
+     * Position of the message within its dialog, or `null` if not provided
+     * by the server.
+     *
+     * Compare with [ParticipantState.readUpToSequence] and [ReceiptEvent]
+     * sequences to resolve delivery/read state.
+     */
+    val sequence: Long? = null
 ) {
 
     /**

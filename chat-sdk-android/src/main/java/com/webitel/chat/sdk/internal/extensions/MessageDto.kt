@@ -30,7 +30,8 @@ internal fun MessageDto.toDomain(
         sendId = sendId,
         reactions = reactions.map { it.toDomain() },
         reply = replyTo?.toDomain(),
-        forwardOrigin = forwardOrigin?.toDomain()
+        forwardOrigin = forwardOrigin?.toDomain(),
+        sequence = sequence
     )
 }
 

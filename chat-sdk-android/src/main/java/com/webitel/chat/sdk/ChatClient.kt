@@ -378,6 +378,17 @@ interface ChatClient {
     fun removeConnectionListener(listener: ConnectionListener)
 
 
+    /**
+     * Registers a listener for client-level events (e.g. resync required).
+     */
+    fun addClientListener(listener: ChatClientListener)
+
+    /**
+     * Unregisters a previously added client listener.
+     */
+    fun removeClientListener(listener: ChatClientListener)
+
+
     companion object {
 
         /**

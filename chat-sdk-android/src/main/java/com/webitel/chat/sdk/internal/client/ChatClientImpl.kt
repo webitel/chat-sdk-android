@@ -2,6 +2,7 @@ package com.webitel.chat.sdk.internal.client
 
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatClient
+import com.webitel.chat.sdk.ChatClientListener
 import com.webitel.chat.sdk.ChatError
 import com.webitel.chat.sdk.ChatEventListener
 import com.webitel.chat.sdk.ConnectionListener
@@ -12,6 +13,7 @@ import com.webitel.chat.sdk.ContactRequest
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogEvent
 import com.webitel.chat.sdk.DialogRequest
+import com.webitel.chat.sdk.DialogSyncChanges
 import com.webitel.chat.sdk.DownloadListener
 import com.webitel.chat.sdk.DownloadRequest
 import com.webitel.chat.sdk.EditMessageResult
@@ -30,6 +32,7 @@ import com.webitel.chat.sdk.MessageTarget
 import com.webitel.chat.sdk.Page
 import com.webitel.chat.sdk.ActivityEvent
 import com.webitel.chat.sdk.ReactionResult
+import com.webitel.chat.sdk.ReceiptEvent
 import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.UploadListener
 import com.webitel.chat.sdk.UploadRequest
@@ -44,7 +47,12 @@ import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionEventDto
+import com.webitel.chat.sdk.internal.transport.dto.MessageStatusEventDto
+import com.webitel.chat.sdk.internal.transport.dto.ReadPosition
+import com.webitel.chat.sdk.internal.transport.dto.ReceiptKind
+import com.webitel.chat.sdk.internal.transport.dto.ThreadUpdatesDto
 import com.webitel.chat.sdk.internal.transport.dto.TypingDto
+import com.webitel.chat.sdk.internal.transport.dto.UpdatesResponseDto
 import com.webitel.chat.sdk.internal.transport.realtime.RealtimeListener
 import com.webitel.chat.sdk.internal.transport.realtime.RealtimeTransport
 import java.util.Timer
@@ -59,7 +67,8 @@ internal class ChatClientImpl(
     private val realtime: RealtimeTransport,
     private val fileUploader: FileUploader,
     private val fileDownloader: HttpFileDownloader,
-    private val hub: RealtimeHub): ChatClient {
+    private val hub: RealtimeHub,
+    private val execution: ExecutionContext): ChatClient, UpdatesSynchronizerDelegate {
     private var retryAttempt = 0
     private var realtimeEnabled = false
     private var backoffTask: TimerTask? = null
@@ -67,6 +76,13 @@ internal class ChatClientImpl(
     private val dialogFactory = DialogFactory(
         client = this,
         realtimeHub = hub
+    )
+
+    // Initial request plus one retry
+    private val synchronizer = UpdatesSynchronizer(
+        execution = execution,
+        maxAttempts = 2,
+        retryDelayMs = { 1000 }
     )
 
     override val connectionState: ConnectionState
@@ -93,6 +109,7 @@ internal class ChatClientImpl(
     init {
         logger.level = clientContext.logLevel
         realtime.setListener(realtimeListener())
+        synchronizer.delegate = this
     }
 
 
@@ -132,6 +149,20 @@ internal class ChatClientImpl(
         callWithAuthRetry(
             call = { callback ->
                 api.sendTyping(dialogId, request, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    fun markAsRead(
+        dialogId: String,
+        position: ReadPosition,
+        onComplete: (Result<Unit>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.markAsRead(dialogId, position, callback)
             },
             onComplete = onComplete
         )
@@ -291,12 +322,20 @@ internal class ChatClientImpl(
 
     override fun endSession(onComplete: (Result<Unit>) -> Unit) {
         disconnect()
+        synchronizer.reset()
+        // Queued after the reset: realtime events already waiting on the
+        // sync thread must not repopulate the cache of the ended session
+        execution.sync { dialogFactory.clear() }
         authManager.endSession(onComplete)
     }
 
 
     override fun connect() {
         logger.debug(TAG, "called connect()")
+
+        // Ordered after a preceding `endSession()` reset on the sync thread
+        synchronizer.activate()
+
         if (realtimeEnabled) {
             logger.debug(TAG,
                 "connect: realtime is enabled. State $connectionState"
@@ -361,6 +400,16 @@ internal class ChatClientImpl(
 
     override fun removeConnectionListener(listener: ConnectionListener) {
         hub.removeConnectionListener(listener)
+    }
+
+
+    override fun addClientListener(listener: ChatClientListener) {
+        hub.addClientListener(listener)
+    }
+
+
+    override fun removeClientListener(listener: ChatClientListener) {
+        hub.removeClientListener(listener)
     }
 
 
@@ -473,71 +522,95 @@ internal class ChatClientImpl(
 
     private fun realtimeListener(): RealtimeListener =
         object : RealtimeListener {
-            override fun onMessage(message: MessageDto){
-                val dialog = dialogFactory.get(message.dialogId)
-                val messageDomain = message.toDomain(authManager.currentContact?.id)
-                dialog?.applyMessage(message)
+            override fun onMessage(message: MessageDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    val dialog = dialogFactory.get(message.dialogId)
+                    val messageDomain = message.toDomain(authManager.currentContact?.id)
+                    dialog?.applyMessage(message)
 
-                hub.dispatch(
-                    MessageEvent.Received(message.dialogId, messageDomain)
-                )
+                    hub.dispatch(
+                        MessageEvent.Received(message.dialogId, messageDomain)
+                    )
+                }
             }
 
-            override fun onNewDialog(dialog: DialogDto) {
-                val newDialog = dialogFactory.getOrCreate(dialog)
-                hub.dispatch(
-                    DialogEvent.Created(newDialog.id, newDialog)
-                )
+            override fun onNewDialog(dialog: DialogDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    val newDialog = dialogFactory.getOrCreate(dialog)
+                    hub.dispatch(
+                        DialogEvent.Created(newDialog.id, newDialog)
+                    )
+                }
             }
 
+            // Ephemeral, never buffered by the synchronizer. Dispatched on the
+            // sync thread so all chat events reach listeners from one thread.
             override fun onTyping(typing: TypingDto) {
-                hub.dispatch(
-                    ActivityEvent.Typing(
-                        dialogId = typing.dialogId,
-                        member = typing.member.toDomain(),
-                        previewText = typing.previewText,
-                        timeoutMs = typing.timeoutMs
-                    )
-                )
-            }
-
-            override fun onMessageReaction(event: MessageReactionEventDto) {
-                dialogFactory.get(event.dialogId)?.applyReactions(event.messageId, event.reactions)
-
-                hub.dispatch(
-                    MessageEvent.ReactionsChanged(
-                        dialogId = event.dialogId,
-                        messageId = event.messageId,
-                        reactions = event.reactions.map { it.toDomain() }
-                    )
-                )
-            }
-
-            override fun onMessageDeleted(event: MessageDeletedEventDto) {
-                dialogFactory.get(event.dialogId)?.applyDeletion(event.messageId)
-
-                hub.dispatch(
-                    MessageEvent.Deleted(
-                        dialogId = event.dialogId,
-                        deletion = MessageDeletion(
-                            messageId = event.messageId,
-                            deletedBy = event.deletedBy.toDomain(),
-                            deletedAt = event.deletedAt
+                synchronizer.submitEphemeral {
+                    hub.dispatch(
+                        ActivityEvent.Typing(
+                            dialogId = typing.dialogId,
+                            member = typing.member.toDomain(),
+                            previewText = typing.previewText,
+                            timeoutMs = typing.timeoutMs
                         )
                     )
-                )
+                }
             }
 
-            override fun onMessageEdited(message: MessageDto) {
-                val dialog = dialogFactory.get(message.dialogId)
-                val merged = dialog?.applyEdit(message) ?: message
+            override fun onMessageReaction(event: MessageReactionEventDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    dialogFactory.get(event.dialogId)?.applyReactions(event.messageId, event.reactions)
 
-                hub.dispatch(
-                    MessageEvent.Edited(
-                        dialogId = message.dialogId,
-                        message = merged.toDomain(authManager.currentContact?.id)
+                    hub.dispatch(
+                        MessageEvent.ReactionsChanged(
+                            dialogId = event.dialogId,
+                            messageId = event.messageId,
+                            reactions = event.reactions.map { it.toDomain() }
+                        )
                     )
-                )
+                }
+            }
+
+            override fun onMessageDeleted(event: MessageDeletedEventDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    dialogFactory.get(event.dialogId)?.applyDeletion(event.messageId)
+
+                    hub.dispatch(
+                        MessageEvent.Deleted(
+                            dialogId = event.dialogId,
+                            deletion = MessageDeletion(
+                                messageId = event.messageId,
+                                deletedBy = event.deletedBy.toDomain(),
+                                deletedAt = event.deletedAt
+                            )
+                        )
+                    )
+                }
+            }
+
+            override fun onMessageEdited(message: MessageDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    val dialog = dialogFactory.get(message.dialogId)
+                    val merged = dialog?.applyEdit(message) ?: message
+
+                    hub.dispatch(
+                        MessageEvent.Edited(
+                            dialogId = message.dialogId,
+                            message = merged.toDomain(authManager.currentContact?.id)
+                        )
+                    )
+                }
+            }
+
+            override fun onMessageStatus(event: MessageStatusEventDto, cursor: String?) {
+                synchronizer.submit(cursor) {
+                    applyMessageStatus(event)
+                }
+            }
+
+            override fun onConnectedEvent(cursor: String?) {
+                synchronizer.onConnected(cursor)
             }
 
             override fun onError(error: ChatError) {
@@ -588,6 +661,104 @@ internal class ChatClientImpl(
                 tryConnect()
             }
         }
+
+
+    private fun applyMessageStatus(event: MessageStatusEventDto) {
+        // TODO: map failed delivery statuses to `ReceiptEvent.DeliveryFailed`
+        val kind = event.receiptKind
+        if (kind == null) {
+            logger.warn(TAG, "Unsupported message status: ${event.status}")
+            return
+        }
+
+        val member = event.member.toDomain()
+
+        // Unknown dialog: no local state to compare against, dispatch as is
+        val advanced = dialogFactory.get(event.dialogId)
+            ?.applyReceipt(member, kind, event.upToSeq)
+            ?: true
+
+        if (!advanced) return
+
+        val receipt = when (kind) {
+            ReceiptKind.DELIVERED -> ReceiptEvent.Delivered(event.dialogId, member, event.upToSeq)
+            ReceiptKind.READ -> ReceiptEvent.Read(event.dialogId, member, event.upToSeq)
+        }
+
+        hub.dispatch(receipt)
+    }
+
+
+    override fun fetchUpdates(
+        cursor: String,
+        onComplete: (Result<UpdatesResponseDto>) -> Unit
+    ) {
+        callWithAuthRetry(
+            call = { callback ->
+                api.getUpdates(cursor, callback)
+            },
+            onComplete = onComplete
+        )
+    }
+
+
+    override fun applyUpdates(threads: List<ThreadUpdatesDto>) {
+        val currentUserId = currentUserId
+
+        threads.forEach { thread ->
+            val messageDtos = thread.messages.sortedBy { it.sequence ?: 0 }
+            val messages = messageDtos.map { it.toDomain(currentUserId) }
+            val memberChanges = thread.memberChanges.mapNotNull { it.toDomain() }
+
+            val dialog: DialogImpl?
+
+            if (thread.dialog != null) {
+                val (resolved, isNew) = dialogFactory.getOrCreateReportingNew(thread.dialog)
+                dialog = resolved
+
+                // Dialog created while offline: announce it before its changes
+                if (isNew) {
+                    hub.dispatch(DialogEvent.Created(resolved.id, resolved))
+                }
+            } else {
+                dialog = dialogFactory.get(thread.threadId)
+                dialog?.applySync(
+                    lastMessage = thread.topMessage ?: messageDtos.lastOrNull(),
+                    deletedMessageIds = thread.deletedMessageIds
+                )
+
+                // Before resolving read states, so newly added members are known
+                dialog?.applyMemberChanges(memberChanges)
+            }
+
+            val members = thread.dialog?.members?.map { it.toDomain() }
+                ?: dialog?.members
+                ?: emptyList()
+            val recoveredStates = thread.readStates.mapNotNull { it.toDomain(members) }
+
+            // Expose the merged horizons, the same ones the dialog now holds
+            val participantStates = dialog?.mergeParticipantStates(recoveredStates)
+                ?: recoveredStates
+
+            val changes = DialogSyncChanges(
+                unreadCount = thread.unreadCount,
+                messages = messages,
+                deletedMessageIds = thread.deletedMessageIds,
+                participantStates = participantStates,
+                // TODO: map once the server exposes delivery failures in updates
+                deliveryExceptions = emptyList(),
+                memberChanges = memberChanges,
+                hasLeft = thread.left
+            )
+
+            hub.dispatch(DialogEvent.Synchronized(thread.threadId, changes))
+        }
+    }
+
+
+    override fun resyncRequired() {
+        hub.notifyResyncRequired()
+    }
 
 
     private fun failRealtime(error: ChatError) {

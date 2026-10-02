@@ -9,6 +9,7 @@ internal enum class EventType(val value: String) {
     MessageReaction("message_reaction_event"),
     MessageDeleted("message_deleted_event"),
     MessageEdited("message_edited_event"),
+    MessageStatus("message_status_event"),
     Ack("ack_event"),
     Error("error_event"),
     Ping("ping_event"),

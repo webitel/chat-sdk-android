@@ -6,4 +6,5 @@ internal data class DialogDto(
     val subject: String,
     val members: List<ParticipantDto>,
     val type: String,
+    val readStates: List<ReadStateDto> = emptyList(),
 )

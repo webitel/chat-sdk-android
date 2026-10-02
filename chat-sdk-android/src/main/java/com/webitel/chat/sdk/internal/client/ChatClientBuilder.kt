@@ -132,7 +132,8 @@ internal class ChatClientBuilder(
             realtimeTransport,
             fileUploader,
             fileDownloader,
-            realtimeHub
+            realtimeHub,
+            execution
         )
     }
 }

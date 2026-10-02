@@ -8,12 +8,27 @@ internal class DialogFactory(
     private val client: ChatClientImpl,
     private val realtimeHub: RealtimeHub
 ) {
+    /** Accessed from the sync thread and API callbacks. Access only under [lock]. */
+    private val lock = Any()
     private val cache = mutableMapOf<String, DialogImpl>()
 
-    fun getOrCreate(dialogInfo: DialogDto): DialogImpl {
-        val existing = cache[dialogInfo.id]
+    fun getOrCreate(dialogInfo: DialogDto): DialogImpl =
+        getOrCreateReportingNew(dialogInfo).first
 
-        return if (existing == null) {
+
+    /**
+     * Same as [getOrCreate], but also reports whether the dialog
+     * was created by this call. The check and insertion are atomic.
+     */
+    fun getOrCreateReportingNew(dialogInfo: DialogDto): Pair<DialogImpl, Boolean> =
+        synchronized(lock) {
+            val existing = cache[dialogInfo.id]
+
+            if (existing != null) {
+                existing.update(dialogInfo)
+                return existing to false
+            }
+
             val dialog = DialogImpl(
                 id = dialogInfo.id,
                 client = client,
@@ -24,13 +39,13 @@ internal class DialogFactory(
             )
 
             cache[dialogInfo.id] = dialog
-            dialog
-        } else {
-            existing.update(dialogInfo)
-            existing
+            dialog to true
         }
-    }
 
 
-    fun get(dialogId: String) = cache[dialogId]
+    fun get(dialogId: String): DialogImpl? = synchronized(lock) { cache[dialogId] }
+
+
+    /** Forgets dialogs of the ended session. */
+    fun clear() = synchronized(lock) { cache.clear() }
 }
