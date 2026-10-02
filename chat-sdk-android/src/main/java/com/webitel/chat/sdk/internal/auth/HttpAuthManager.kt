@@ -28,6 +28,7 @@ internal class HttpAuthManager(
     : AuthManager {
 
     private val listeners = mutableSetOf<(String) -> Unit>()
+    @Volatile
     override var currentContact: ContactDto? = null
     private val lock = Any()
     private var refreshing = false
@@ -66,7 +67,13 @@ internal class HttpAuthManager(
             }
 
             callbacksToExecute.forEach { cb ->
-                cb(result)
+                try {
+                    cb(result)
+                } catch (e: Exception) {
+                    logger.error(TAG,
+                        "Error in refresh callback: ${e.stackTraceToString()}"
+                    )
+                }
             }
         }
     }

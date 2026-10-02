@@ -40,10 +40,9 @@ internal class HttpFileUploader(
 
     override fun upload(
         request: UploadRequest,
-        listener: UploadListener
+        listener: UploadListener,
+        task: TransferTaskImpl
     ): Cancellable {
-
-        val task = TransferTaskImpl()
 
         execution.transfer {
             runCatching {
@@ -68,7 +67,9 @@ internal class HttpFileUploader(
             }.onSuccess {
                 listener.onCompleted(it)
             }.onFailure { error ->
-                listener.onError(error.toChatError())
+                listener.onError(
+                    if (task.isCanceled()) ChatError.Canceled else error.toChatError()
+                )
             }
         }
 

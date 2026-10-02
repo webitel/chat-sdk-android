@@ -32,9 +32,9 @@ internal class HttpFileDownloader(
 
     fun download(
         request: DownloadRequest,
-        listener: DownloadListener
+        listener: DownloadListener,
+        task: TransferTaskImpl
     ): Cancellable {
-        val task = TransferTaskImpl()
         execution.transfer {
             try {
                 val httpRequest = buildRequest(request)
@@ -195,6 +195,10 @@ internal class TransferTaskImpl : Cancellable {
 
     @Volatile
     var call: Call? = null
+        set(value) {
+            field = value
+            if (canceled) value?.cancel()
+        }
 
     override fun cancel() {
         if (canceled) {

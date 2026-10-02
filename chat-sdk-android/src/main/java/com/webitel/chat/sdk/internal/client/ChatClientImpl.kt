@@ -36,6 +36,7 @@ import com.webitel.chat.sdk.UploadRequest
 import com.webitel.chat.sdk.internal.api.ChatApiDelegate
 import com.webitel.chat.sdk.internal.api.FileUploader
 import com.webitel.chat.sdk.internal.api.HttpFileDownloader
+import com.webitel.chat.sdk.internal.api.TransferTaskImpl
 import com.webitel.chat.sdk.internal.auth.AuthManager
 import com.webitel.chat.sdk.internal.extensions.toChatError
 import com.webitel.chat.sdk.internal.extensions.toDomain
@@ -257,7 +258,10 @@ internal class ChatClientImpl(
         request: UploadRequest,
         listener: UploadListener
     ): Cancellable {
-        return  fileUploader.upload(request, listener)
+        val wrapped = listener.clearingAuthOnUnauthorized()
+        return startTransfer(wrapped::onError) { task ->
+            fileUploader.upload(request, wrapped, task)
+        }
     }
 
 
@@ -265,7 +269,10 @@ internal class ChatClientImpl(
         request: DownloadRequest,
         listener: DownloadListener
     ): Cancellable {
-        return fileDownloader.download(request, listener)
+        val wrapped = listener.clearingAuthOnUnauthorized()
+        return startTransfer(wrapped::onError) { task ->
+            fileDownloader.download(request, wrapped, task)
+        }
     }
 
 
@@ -404,6 +411,63 @@ internal class ChatClientImpl(
             },
             onComplete = onComplete
         )
+    }
+
+
+    /**
+     * Validates auth before starting a transfer. The returned task can be
+     * cancelled immediately; if it was cancelled before auth completes, the
+     * transfer is not started and [ChatError.Canceled] is reported instead.
+     * Auth errors may be delivered on a different thread than transfer errors.
+     */
+    private fun startTransfer(
+        onError: (ChatError) -> Unit,
+        start: (TransferTaskImpl) -> Unit
+    ): Cancellable {
+        val task = TransferTaskImpl()
+
+        authManager.ensureAuthValid { authResult ->
+            if (task.isCanceled()) {
+                onError(ChatError.Canceled)
+                return@ensureAuthValid
+            }
+
+            authResult.fold(
+                onSuccess = {
+                    runCatching { start(task) }
+                        .onFailure { error -> onError(error.toChatError()) }
+                },
+                onFailure = { error -> onError(error.toChatError()) }
+            )
+        }
+
+        return task
+    }
+
+
+    /**
+     * Transfers do not retry on 401: the stale token is cleared and the error
+     * is passed to the listener as is.
+     */
+    private fun UploadListener.clearingAuthOnUnauthorized(): UploadListener {
+        val origin = this
+        return object : UploadListener by origin {
+            override fun onError(error: ChatError) {
+                if (error is ChatError.Unauthorized) authManager.clearAuth()
+                origin.onError(error)
+            }
+        }
+    }
+
+
+    private fun DownloadListener.clearingAuthOnUnauthorized(): DownloadListener {
+        val origin = this
+        return object : DownloadListener by origin {
+            override fun onError(error: ChatError) {
+                if (error is ChatError.Unauthorized) authManager.clearAuth()
+                origin.onError(error)
+            }
+        }
     }
 
 
