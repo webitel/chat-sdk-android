@@ -1245,10 +1245,12 @@ internal class HttpChatApiDelegate(
             .apply {
                 request.cursor?.let { cursor ->
                     addQueryParameter("cursor.id", cursor.messageId)
-                    addQueryParameter(
-                        "cursor.before",
-                        if (cursor.direction == MoveDirection.NEWER) "true" else "false"
-                    )
+
+                    when (cursor.direction) {
+                        MoveDirection.AROUND -> addQueryParameter("cursor.around", "true")
+                        MoveDirection.NEWER -> addQueryParameter("cursor.before", "true")
+                        MoveDirection.OLDER -> addQueryParameter("cursor.before", "false")
+                    }
                 }
                 if (clientContext.port > 0)
                     port(clientContext.port)

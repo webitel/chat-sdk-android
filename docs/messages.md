@@ -192,6 +192,12 @@ data class HistoryCursor(
 )
 ```
 
+`MoveDirection` values:
+
+- `OLDER` — load messages older than the cursor (default)  
+- `NEWER` — load messages newer than the cursor  
+- `AROUND` — load messages around the cursor (both older and newer)  
+
 
 ### Result
 
@@ -219,6 +225,24 @@ Cursors can also be created manually. This is useful, for example, after reconne
 - set direction to MoveDirection.NEWER  
 
 This allows checking whether new messages after the connection was restored.
+
+
+### Jumping to a Message
+
+To open history at a specific message (for example, when the user taps a message search result), use the `AROUND` direction. The dialog can be resolved via `message.dialogId`.
+
+```kotlin
+val request = HistoryRequest(
+    limit = 50,
+    cursor = HistoryCursor(messageId = message.id, direction = MoveDirection.AROUND)
+)
+
+dialog.getHistory(request) { result ->
+    result.onSuccess { slice ->
+        // Continue pagination from this point using slice.olderCursor / slice.newerCursor
+    }
+}
+```
 
 See [Message Search](message-search.md) for searching messages by text.
 

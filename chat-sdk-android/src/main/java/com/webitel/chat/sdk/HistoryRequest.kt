@@ -33,5 +33,11 @@ enum class MoveDirection {
     OLDER,
 
     /** Load messages that are newer than the cursor. */
-    NEWER
+    NEWER,
+
+    /**
+     * Load messages around the cursor (both older and newer).
+     * Useful for jumping to a specific message, e.g. a message search result.
+     */
+    AROUND
 }
