@@ -152,6 +152,12 @@ data class Message(
 
     /** Indicates whether the message is outgoing */
     val isOutgoing: Boolean,
+
+    /**
+     * Position of the message within its dialog (null if not provided).
+     * Compare with read/delivery horizons, see [Events](events.md#receipt-events).
+     */
+    val sequence: Long? = null,
 )
 ```
 
@@ -215,3 +221,46 @@ Cursors can also be created manually. This is useful, for example, after reconne
 This allows checking whether new messages after the connection was restored.
 
 See [Message Search](message-search.md) for searching messages by text.
+
+
+## Marking Messages as Read
+
+Messages are marked as read via a dialog instance, either by sequence or by message id:
+- `dialog.markAsRead(sequence)` — using `Message.sequence`
+- `dialog.markAsRead(messageId)` — using `Message.id`
+
+All messages in the dialog up to and including the given message are considered read. Both variants behave the same on the server; `Message.sequence` is optional, so fall back to `messageId` when it is `null`.
+
+```kotlin
+/** Marks messages in this dialog as read up to the given sequence. */
+fun markAsRead(
+    sequence: Long,
+    onComplete: (Result<Unit>) -> Unit
+)
+
+/** Marks messages in this dialog as read up to the given message. */
+fun markAsRead(
+    messageId: String,
+    onComplete: (Result<Unit>) -> Unit
+)
+```
+
+```kotlin
+val onComplete: (Result<Unit>) -> Unit = { result ->
+    result
+        .onSuccess { /* marked as read */ }
+        .onFailure { error -> println("Failed to mark as read: $error") }
+}
+
+val sequence = message.sequence
+
+if (sequence != null) {
+    dialog.markAsRead(sequence, onComplete)
+} else {
+    dialog.markAsRead(message.id, onComplete)
+}
+```
+
+Unlike `editMessage`/`deleteMessages`, this operation is scoped to a dialog (`POST /api/v1/threads/{dialogId}/read`), so it is available only on `Dialog`, not on `ChatClient` — the same as `sendTyping`.
+
+Other participants receive a `ReceiptEvent.Read`, see [Events](events.md#receipt-events).
