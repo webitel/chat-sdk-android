@@ -50,8 +50,13 @@ interface Dialog {
 
     /** Last message sent in the dialog, if available. */
     val lastMessage: Message?
+
+    /** Number of messages not yet read by the current user. */
+    val unreadCount: Int
 }
 ```
+
+`unreadCount` is loaded with the dialog and kept up to date by the SDK: incoming messages (`MessageEvent.Received`), the current user's read receipts (`ReceiptEvent.Read`, including reads from other devices) and [synchronization](events.md#synchronization) after a reconnect. No separate event is dispatched — re-read it when handling these events.
 
 
 ## Participants

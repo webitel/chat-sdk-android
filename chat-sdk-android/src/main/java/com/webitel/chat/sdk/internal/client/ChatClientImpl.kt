@@ -522,11 +522,12 @@ internal class ChatClientImpl(
 
     private fun realtimeListener(): RealtimeListener =
         object : RealtimeListener {
-            override fun onMessage(message: MessageDto, cursor: String?) {
+            override fun onMessage(message: MessageDto, unreadCount: Int?, cursor: String?) {
                 synchronizer.submit(cursor) {
+                    val currentUserId = authManager.currentContact?.id
                     val dialog = dialogFactory.get(message.dialogId)
-                    val messageDomain = message.toDomain(authManager.currentContact?.id)
-                    dialog?.applyMessage(message)
+                    val messageDomain = message.toDomain(currentUserId)
+                    dialog?.applyMessage(message, unreadCount, currentUserId)
 
                     hub.dispatch(
                         MessageEvent.Received(message.dialogId, messageDomain)
@@ -675,14 +676,14 @@ internal class ChatClientImpl(
 
         // Unknown dialog: no local state to compare against, dispatch as is
         val advanced = dialogFactory.get(event.dialogId)
-            ?.applyReceipt(member, kind, event.upToSeq)
+            ?.applyReceipt(member, kind, event.upToSeq, event.unreadCount)
             ?: true
 
         if (!advanced) return
 
         val receipt = when (kind) {
             ReceiptKind.DELIVERED -> ReceiptEvent.Delivered(event.dialogId, member, event.upToSeq)
-            ReceiptKind.READ -> ReceiptEvent.Read(event.dialogId, member, event.upToSeq)
+            ReceiptKind.READ -> ReceiptEvent.Read(event.dialogId, member, event.upToSeq, event.unreadCount)
         }
 
         hub.dispatch(receipt)
@@ -716,6 +717,10 @@ internal class ChatClientImpl(
                 val (resolved, isNew) = dialogFactory.getOrCreateReportingNew(thread.dialog)
                 dialog = resolved
 
+                if (thread.dialog.unreadCount == null) {
+                    thread.unreadCount?.let(resolved::applyUnreadCount)
+                }
+
                 // Dialog created while offline: announce it before its changes
                 if (isNew) {
                     hub.dispatch(DialogEvent.Created(resolved.id, resolved))
@@ -724,7 +729,8 @@ internal class ChatClientImpl(
                 dialog = dialogFactory.get(thread.threadId)
                 dialog?.applySync(
                     lastMessage = thread.topMessage ?: messageDtos.lastOrNull(),
-                    deletedMessageIds = thread.deletedMessageIds
+                    deletedMessageIds = thread.deletedMessageIds,
+                    unreadCount = thread.unreadCount
                 )
 
                 // Before resolving read states, so newly added members are known
@@ -741,7 +747,8 @@ internal class ChatClientImpl(
                 ?: recoveredStates
 
             val changes = DialogSyncChanges(
-                unreadCount = thread.unreadCount,
+                // Same value the dialog now holds
+                unreadCount = dialog?.unreadCount ?: thread.unreadCount ?: 0,
                 messages = messages,
                 deletedMessageIds = thread.deletedMessageIds,
                 participantStates = participantStates,

@@ -280,9 +280,14 @@ internal class Parser {
             type = type,
             members = members,
             lastMessage = lastMessage,
-            readStates = parseReadStates(obj.optJSONArray("read_states"))
+            readStates = parseReadStates(obj.optJSONArray("read_states")),
+            unreadCount = obj.unreadCountOrNull()
         )
     }
+
+
+    /** Reads the current user's unread count from an event body (`unread_count`). */
+    fun parseUnreadCount(obj: JSONObject?): Int? = obj?.unreadCountOrNull()
 
 
     fun parseMessageStatusEvent(obj: JSONObject?): MessageStatusEventDto? {
@@ -305,7 +310,8 @@ internal class Parser {
             status = status,
             member = member,
             upToSeq = upToSeq,
-            occurredAt = obj.flexibleLongOrNull("occurred_at")
+            occurredAt = obj.flexibleLongOrNull("occurred_at"),
+            unreadCount = obj.unreadCountOrNull()
         )
     }
 
@@ -379,7 +385,7 @@ internal class Parser {
         return ThreadUpdatesDto(
             threadId = threadId,
             dialog = dialog,
-            unreadCount = obj.flexibleLongOrNull("unread_count")?.toInt() ?: 0,
+            unreadCount = obj.unreadCountOrNull(),
             messages = messages,
             topMessage = parseMessage(obj.optJSONObject("top_message"), fallbackDialogId = threadId),
             deletedMessageIds = deletedMessageIds,
@@ -424,6 +430,14 @@ internal class Parser {
             is String -> value.toLongOrNull()
             else -> null
         }
+
+
+    /**
+     * Reads an unread count sent either as a JSON number or a numeric string,
+     * clamping negative values to zero. Returns `null` when absent or malformed.
+     */
+    private fun JSONObject.unreadCountOrNull(key: String = "unread_count"): Int? =
+        flexibleLongOrNull(key)?.coerceIn(0, Int.MAX_VALUE.toLong())?.toInt()
 
 
     private fun parseContent(obj: JSONObject): MessageContent? {

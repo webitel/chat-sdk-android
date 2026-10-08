@@ -12,7 +12,8 @@ import com.webitel.chat.sdk.internal.transport.dto.TypingDto
  * `cursor` is the updates cursor carried by the frame, if any.
  */
 internal interface RealtimeListener {
-    fun onMessage(message: MessageDto, cursor: String?)
+    /** `unreadCount` is the current user's unread count in the dialog, if sent by the server. */
+    fun onMessage(message: MessageDto, unreadCount: Int?, cursor: String?)
     fun onNewDialog(dialog: DialogDto, cursor: String?)
     fun onTyping(typing: TypingDto)
     fun onMessageReaction(event: MessageReactionEventDto, cursor: String?)

@@ -5,7 +5,9 @@ internal data class MessageStatusEventDto(
     val status: String,
     val member: ParticipantDto,
     val upToSeq: Long,
-    val occurredAt: Long?
+    val occurredAt: Long?,
+    /** Current user's unread count, present only when the event is about the current user. */
+    val unreadCount: Int?
 ) {
 
     /** Receipt kind for the status, null for statuses not handled by this SDK version. */

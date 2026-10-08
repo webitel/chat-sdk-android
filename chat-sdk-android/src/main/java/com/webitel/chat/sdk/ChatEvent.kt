@@ -189,10 +189,15 @@ sealed class ReceiptEvent : ChatEvent {
         val upToSequence: Long
     ) : ReceiptEvent()
 
+    /**
+     * [unreadCount] is the current user's unread count after the receipt;
+     * present only when [member] is the current user, `null` otherwise.
+     */
     data class Read(
         override val dialogId: String,
         val member: Participant,
-        val upToSequence: Long
+        val upToSequence: Long,
+        val unreadCount: Int?
     ) : ReceiptEvent()
 
     /**

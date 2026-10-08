@@ -43,6 +43,9 @@ sealed interface ChatEvent {
 ```
 
 
+The SDK updates the cached `Dialog` state (`lastMessage`, `unreadCount`, `participantStates`) **before** dispatching any event for that dialog. There are no separate "dialog changed" events — on any event, re-read the dialog's properties to refresh its UI.
+
+
 ## Event types
 
 ### Message events
@@ -73,6 +76,15 @@ sealed class MessageEvent : ChatEvent {
         val messageId: String,
         val reactions: List<MessageReaction>,
     ) : MessageEvent()
+}
+```
+
+`Received` also updates `Dialog.unreadCount`: the server's `unread_count` is used when the event carries it; otherwise an incoming message newer than the current user's read horizon increments the count. Outgoing messages, including ones sent from another device, are not counted. Any drift is corrected by the next read receipt for the current user (even a duplicate one) or by a [synchronization](#synchronization).
+
+```kotlin
+is MessageEvent.Received -> {
+    val dialog = dialogs[event.dialogId] ?: return
+    reloadRow(dialog) // lastMessage and unreadCount are already up to date
 }
 ```
 
@@ -137,7 +149,8 @@ sealed class ReceiptEvent : ChatEvent {
     data class Read(
         override val dialogId: String,
         val member: Participant,
-        val upToSequence: Long
+        val upToSequence: Long,
+        val unreadCount: Int?
     ) : ReceiptEvent()
 
     data class DeliveryFailed(
@@ -150,6 +163,8 @@ sealed class ReceiptEvent : ChatEvent {
 Receipts are cumulative horizons: `Read(upToSequence = 108)` means every message with `Message.sequence <= 108` is read by `member`.
 
 The SDK first advances `Dialog.participantStates`, then dispatches the event — only when the horizon actually moved forward. Duplicate or stale receipts are dropped, so a horizon never goes back. `Read` and `Delivered` are tracked independently.
+
+`Read` carries `unreadCount` — the current user's unread count after the receipt. It is set only when `member` is the current user (e.g. after `markAsRead` or reading on another device); for receipts from other participants it is `null`. The SDK updates `Dialog.unreadCount` before dispatching the event, so both always match. A duplicate read receipt for the current user is not dispatched, but its `unreadCount` is still applied to `Dialog.unreadCount`.
 
 ```kotlin
 data class ParticipantState(
@@ -164,6 +179,8 @@ The same `participantStates` are loaded with the dialog and refreshed after a re
 ```kotlin
 is ReceiptEvent.Read -> {
     markRead(event.dialogId, event.member.id, upTo = event.upToSequence)
+
+    event.unreadCount?.let { setUnreadBadge(event.dialogId, it) }
 }
 ```
 
@@ -195,7 +212,7 @@ data class DialogSyncChanges(
 )
 ```
 
-The dialog's cached `lastMessage`, `members` and `participantStates` are updated automatically. Recovered horizons are merged with the ones received in realtime and never move back.
+The dialog's cached `lastMessage`, `unreadCount`, `members` and `participantStates` are updated automatically. Recovered horizons are merged with the ones received in realtime and never move back.
 
 Dialogs created while offline are announced first, so they are handled by the same code as realtime `Created`:
 

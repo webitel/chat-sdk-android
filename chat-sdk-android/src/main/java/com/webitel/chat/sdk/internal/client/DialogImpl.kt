@@ -48,6 +48,7 @@ internal class DialogImpl(
     private var states: List<ParticipantState> =
         snapshot.readStates.mapNotNull { it.toDomain(members) }
     private var exceptions: List<DeliveryException> = emptyList()
+    private var unread: Int = snapshot.unreadCount ?: 0
 
     override val subject: String
         get() = synchronized(lock) { snapshot.subject }
@@ -58,6 +59,9 @@ internal class DialogImpl(
     override val lastMessage: Message?
         get() = synchronized(lock) { snapshot.lastMessage }
             ?.toDomain(client.currentUserId)
+
+    override val unreadCount: Int
+        get() = synchronized(lock) { unread }
 
     override val participantStates: List<ParticipantState>
         get() = synchronized(lock) { states }
@@ -177,19 +181,24 @@ internal class DialogImpl(
             snapshot = info
             currentMembers = members
             states = merge(states, readStates)
+            info.unreadCount?.let { unread = it }
         }
     }
 
 
     /**
-     * Advances the participant's receipt horizon.
+     * Advances the participant's receipt horizon and, when provided,
+     * the current user's unread count.
+     *
+     * A duplicate read receipt still updates the unread count; a stale one is ignored.
      *
      * @return `true` if the horizon moved forward, `false` for stale or duplicate receipts.
      */
     internal fun applyReceipt(
         member: Participant,
         kind: ReceiptKind,
-        upToSequence: Long
+        upToSequence: Long,
+        unreadCount: Int?
     ): Boolean = synchronized(lock) {
         val current = states.firstOrNull { it.member.id == member.id }
             ?: ParticipantState(member, deliveredUpToSequence = 0, readUpToSequence = 0)
@@ -201,7 +210,12 @@ internal class DialogImpl(
             }
 
             ReceiptKind.READ -> {
-                if (upToSequence <= current.readUpToSequence) return false
+                if (upToSequence < current.readUpToSequence) return false
+
+                // A repeated horizon still carries the server's current count: corrects local drift
+                unreadCount?.let { unread = it }
+
+                if (upToSequence == current.readUpToSequence) return false
                 current.copy(member = member, readUpToSequence = upToSequence)
             }
         }
@@ -250,9 +264,44 @@ internal class DialogImpl(
     }
 
 
-    internal fun applyMessage(message: MessageDto) {
+    internal fun applyUnreadCount(unreadCount: Int) {
+        synchronized(lock) { unread = unreadCount }
+    }
+
+
+    /**
+     * Sets the last message unless it is older than the current one, and updates the unread count.
+     *
+     * Uses [unreadCount] from the server when present; otherwise counts an incoming
+     * message newer than the current user's read horizon. A repeated or older message
+     * (e.g. a replayed event) is not counted.
+     */
+    internal fun applyMessage(message: MessageDto, unreadCount: Int?, currentUserId: String?) {
         synchronized(lock) {
-            snapshot = snapshot.copy(lastMessage = message)
+            val last = snapshot.lastMessage
+            val isRepeated = last?.id == message.id
+            val isOlder = last != null && !isRepeated && isNewer(last, message)
+
+            if (!isOlder) {
+                snapshot = snapshot.copy(lastMessage = message)
+            }
+
+            if (unreadCount != null) {
+                unread = unreadCount
+                return
+            }
+
+            val isOutgoing = message.from.toDomain().contact.id.sub == currentUserId
+            if (isOutgoing || isRepeated || isOlder) return
+
+            val readHorizon = states
+                .firstOrNull { it.member.contact.id.sub == currentUserId }
+                ?.readUpToSequence ?: 0
+
+            val sequence = message.sequence
+            if (sequence != null && sequence <= readHorizon) return
+
+            unread += 1
         }
     }
 
@@ -279,8 +328,14 @@ internal class DialogImpl(
     }
 
 
-    internal fun applySync(lastMessage: MessageDto?, deletedMessageIds: List<String>) {
+    internal fun applySync(
+        lastMessage: MessageDto?,
+        deletedMessageIds: List<String>,
+        unreadCount: Int?
+    ) {
         synchronized(lock) {
+            unreadCount?.let { unread = it }
+
             val current = snapshot.lastMessage
 
             if (current != null && current.id in deletedMessageIds) {

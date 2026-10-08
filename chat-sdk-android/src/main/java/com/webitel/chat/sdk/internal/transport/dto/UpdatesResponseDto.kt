@@ -11,7 +11,8 @@ internal data class UpdatesResponseDto(
 internal data class ThreadUpdatesDto(
     val threadId: String,
     val dialog: DialogDto?,
-    val unreadCount: Int,
+    /** `null` when the update does not carry the count. */
+    val unreadCount: Int?,
     val messages: List<MessageDto>,
     val topMessage: MessageDto?,
     val deletedMessageIds: List<String>,

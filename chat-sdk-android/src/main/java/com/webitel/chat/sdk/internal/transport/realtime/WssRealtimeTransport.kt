@@ -253,7 +253,9 @@ internal class WssRealtimeTransport(
             return
         }
 
-        realtimeListener?.onMessage(message, cursor)
+        val unreadCount = parser.parseUnreadCount(messageObj)
+
+        realtimeListener?.onMessage(message, unreadCount, cursor)
     }
 
 

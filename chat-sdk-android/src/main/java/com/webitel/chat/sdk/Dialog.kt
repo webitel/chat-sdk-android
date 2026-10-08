@@ -24,6 +24,14 @@ interface Dialog {
     val lastMessage: Message?
 
     /**
+     * Number of messages in the dialog not yet read by the current user.
+     *
+     * Loaded with the dialog and kept up to date by incoming messages,
+     * the current user's read receipts and synchronization after a reconnect.
+     */
+    val unreadCount: Int
+
+    /**
      * Current delivery/read horizons of dialog participants.
      *
      * Loaded with the dialog, advanced by [ReceiptEvent] and refreshed
