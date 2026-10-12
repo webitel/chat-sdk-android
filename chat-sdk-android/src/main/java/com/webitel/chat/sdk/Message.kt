@@ -86,7 +86,14 @@ data class Message(
      * Compare with [ParticipantState.readUpToSequence] and [ReceiptEvent]
      * sequences to resolve delivery/read state.
      */
-    val sequence: Long? = null
+    val sequence: Long? = null,
+
+    /**
+     * Members this message failed to be delivered to, empty if no failures are known.
+     *
+     * See [ReceiptEvent.DeliveryFailed] for failures received in realtime.
+     */
+    val deliveryExceptions: List<DeliveryException> = emptyList()
 ) {
 
     /**

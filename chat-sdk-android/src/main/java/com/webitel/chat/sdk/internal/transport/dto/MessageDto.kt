@@ -14,4 +14,5 @@ internal data class MessageDto(
     val replyTo: MessageReplyDto? = null,
     val forwardOrigin: MessageForwardOriginDto? = null,
     val sequence: Long? = null,
+    val failures: List<DeliveryFailureDto> = emptyList(),
 )

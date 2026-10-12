@@ -11,3 +11,4 @@
 .cxx
 
 /chat-sdk-android/src/androidTest/
+/chat-sdk-android/src/test/

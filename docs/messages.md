@@ -158,8 +158,56 @@ data class Message(
      * Compare with read/delivery horizons, see [Events](events.md#receipt-events).
      */
     val sequence: Long? = null,
+
+    /** Members this message failed to be delivered to (empty if no failures are known) */
+    val deliveryExceptions: List<DeliveryException> = emptyList()
 )
 ```
+
+See [Delivery Failures](#delivery-failures) for `deliveryExceptions`.
+
+
+## Delivery Failures
+
+A message may fail to reach some dialog members — e.g. an external channel rejects it (Telegram: `403 Forbidden: bot was blocked by the user`). Each failure is described per member:
+
+```kotlin
+data class DeliveryException(
+    val messageId: String,
+    /** Member the message was not delivered to */
+    val member: Participant,
+    val error: DeliveryError
+)
+
+data class DeliveryError(
+    /** e.g. "403" */
+    val code: String,
+    val message: String?
+)
+```
+
+Failures are part of the message itself (`failures` on the server) and arrive through every channel:
+
+| Source | How the client applies it |
+|---|---|
+| History (`getHistory`) | `Message.deliveryExceptions` is already filled |
+| Sync after reconnect (`DialogEvent.Synchronized`) | `changes.messages` carry the whole updated message — upsert by `id` |
+| Message edit (`MessageEvent.Edited`) | `event.message` carries the current failures |
+| Realtime (`ReceiptEvent.DeliveryFailed`) | Find the message by `exception.messageId` and add / replace the failure for `exception.member` |
+
+```kotlin
+is ReceiptEvent.DeliveryFailed -> {
+    val exception = event.exception
+    updateMessage(event.dialogId, exception.messageId) { message ->
+        message.copy(
+            deliveryExceptions = message.deliveryExceptions
+                .filterNot { it.member.id == exception.member.id } + exception
+        )
+    }
+}
+```
+
+Dialogs do not keep a separate list of failures; the SDK only patches the cached `Dialog.lastMessage` when it is the failed message.
 
 
 ## Message History

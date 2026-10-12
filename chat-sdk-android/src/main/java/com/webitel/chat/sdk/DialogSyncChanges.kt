@@ -30,9 +30,6 @@ data class DialogSyncChanges(
      */
     val participantStates: List<ParticipantState>,
 
-    /** Delivery failures that should be applied to local state. */
-    val deliveryExceptions: List<DeliveryException>,
-
     /** Members added or removed while the client was out of sync. */
     val memberChanges: List<MemberChange>,
 
@@ -56,27 +53,6 @@ data class ParticipantState(
 
     /** Highest message sequence known to be read by this participant. */
     val readUpToSequence: Long
-)
-
-
-/**
- * Failed delivery of a message to a participant.
- */
-data class DeliveryException(
-
-    val messageId: String,
-
-    val member: Participant,
-
-    val error: DeliveryError
-)
-
-
-data class DeliveryError(
-
-    val code: String,
-
-    val message: String?
 )
 
 

@@ -184,7 +184,7 @@ is ReceiptEvent.Read -> {
 }
 ```
 
-`DeliveryFailed` is reserved for future use — not yet emitted by the server.
+`DeliveryFailed` is emitted when a message could not be delivered to a member (e.g. the external channel rejected it). Unlike receipts it refers to a single message, not a horizon. Apply it to the message with `exception.messageId` — see [Delivery Failures](messages.md#delivery-failures). Repeated failures for the same member replace the previous one. If the failed message is `Dialog.lastMessage`, the SDK updates its `deliveryExceptions` before dispatching the event.
 
 See [Marking Messages as Read](messages.md#marking-messages-as-read) for sending read receipts.
 
@@ -205,12 +205,13 @@ data class DialogSyncChanges(
      * Same merged values as `Dialog.participantStates`.
      */
     val participantStates: List<ParticipantState>,
-    val deliveryExceptions: List<DeliveryException>,
     val memberChanges: List<MemberChange>,
     /** The current user has left the dialog. */
     val hasLeft: Boolean
 )
 ```
+
+Delivery failures come inside `messages` (`Message.deliveryExceptions`) — upserting the message applies them.
 
 The dialog's cached `lastMessage`, `unreadCount`, `members` and `participantStates` are updated automatically. Recovered horizons are merged with the ones received in realtime and never move back.
 
@@ -300,7 +301,7 @@ override fun onEvent(event: ChatEvent) {
             // update delivered state up to event.upToSequence
         }
         is ReceiptEvent.DeliveryFailed -> {
-            // reserved, not yet emitted
+            // add / replace event.exception on the message with event.exception.messageId
         }
     }
 }

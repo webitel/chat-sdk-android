@@ -201,7 +201,12 @@ sealed class ReceiptEvent : ChatEvent {
     ) : ReceiptEvent()
 
     /**
-     * Reserved for future use — not yet emitted by the server.
+     * A message could not be delivered to a member (e.g. the external channel rejected it).
+     *
+     * Unlike other receipts it refers to a single message ([DeliveryException.messageId]),
+     * not a horizon. A repeated failure for the same member replaces the previous one.
+     * If the failed message is [Dialog.lastMessage], its [Message.deliveryExceptions]
+     * are updated before the event is dispatched.
      */
     data class DeliveryFailed(
         override val dialogId: String,

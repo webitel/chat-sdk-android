@@ -39,9 +39,6 @@ interface Dialog {
      */
     val participantStates: List<ParticipantState>
 
-    /** Current known delivery failures. */
-    val deliveryExceptions: List<DeliveryException>
-
 
     /**
      * Sends a message to this dialog asynchronously.

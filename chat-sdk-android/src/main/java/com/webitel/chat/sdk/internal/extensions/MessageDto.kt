@@ -31,7 +31,8 @@ internal fun MessageDto.toDomain(
         reactions = reactions.map { it.toDomain() },
         reply = replyTo?.toDomain(),
         forwardOrigin = forwardOrigin?.toDomain(),
-        sequence = sequence
+        sequence = sequence,
+        deliveryExceptions = failures.map { it.toDomain(id) }
     )
 }
 

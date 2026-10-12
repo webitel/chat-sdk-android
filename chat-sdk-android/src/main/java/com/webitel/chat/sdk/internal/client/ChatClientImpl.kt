@@ -665,10 +665,21 @@ internal class ChatClientImpl(
 
 
     private fun applyMessageStatus(event: MessageStatusEventDto) {
-        // TODO: map failed delivery statuses to `ReceiptEvent.DeliveryFailed`
+        val failure = event.deliveryFailure
+        val failedMessageId = event.messageId
+        if (failure != null && failedMessageId != null) {
+            dialogFactory.get(event.dialogId)?.applyDeliveryFailure(failedMessageId, failure)
+
+            hub.dispatch(
+                ReceiptEvent.DeliveryFailed(event.dialogId, failure.toDomain(failedMessageId))
+            )
+            return
+        }
+
         val kind = event.receiptKind
-        if (kind == null) {
-            logger.warn(TAG, "Unsupported message status: ${event.status}")
+        val upToSeq = event.upToSeq
+        if (kind == null || upToSeq == null) {
+            logger.warn(TAG, "Unsupported or incomplete message status: ${event.status}")
             return
         }
 
@@ -676,14 +687,14 @@ internal class ChatClientImpl(
 
         // Unknown dialog: no local state to compare against, dispatch as is
         val advanced = dialogFactory.get(event.dialogId)
-            ?.applyReceipt(member, kind, event.upToSeq, event.unreadCount)
+            ?.applyReceipt(member, kind, upToSeq, event.unreadCount)
             ?: true
 
         if (!advanced) return
 
         val receipt = when (kind) {
-            ReceiptKind.DELIVERED -> ReceiptEvent.Delivered(event.dialogId, member, event.upToSeq)
-            ReceiptKind.READ -> ReceiptEvent.Read(event.dialogId, member, event.upToSeq, event.unreadCount)
+            ReceiptKind.DELIVERED -> ReceiptEvent.Delivered(event.dialogId, member, upToSeq)
+            ReceiptKind.READ -> ReceiptEvent.Read(event.dialogId, member, upToSeq, event.unreadCount)
         }
 
         hub.dispatch(receipt)
@@ -752,8 +763,6 @@ internal class ChatClientImpl(
                 messages = messages,
                 deletedMessageIds = thread.deletedMessageIds,
                 participantStates = participantStates,
-                // TODO: map once the server exposes delivery failures in updates
-                deliveryExceptions = emptyList(),
                 memberChanges = memberChanges,
                 hasLeft = thread.left
             )

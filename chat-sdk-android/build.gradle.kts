@@ -38,6 +38,10 @@ android {
         buildConfigField("String", "VERSION_NAME", "\"${getGitVersion()}\"")
     }
     
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     kotlinOptions {
         jvmTarget = "1.8"
     }
@@ -51,6 +55,11 @@ dependencies {
 
     implementation(libs.gson)
     implementation(libs.okhttp)
+
+    // Android's org.json is a stub in local unit tests
+    testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+    testImplementation(libs.mockk)
 
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)

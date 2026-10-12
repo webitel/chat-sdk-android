@@ -2,7 +2,6 @@ package com.webitel.chat.sdk.internal.client
 
 import com.webitel.chat.sdk.Cancellable
 import com.webitel.chat.sdk.ChatEventListener
-import com.webitel.chat.sdk.DeliveryException
 import com.webitel.chat.sdk.Dialog
 import com.webitel.chat.sdk.DialogType
 import com.webitel.chat.sdk.EditMessageResult
@@ -23,6 +22,7 @@ import com.webitel.chat.sdk.ParticipantState
 import com.webitel.chat.sdk.ReactionResult
 import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.internal.extensions.toDomain
+import com.webitel.chat.sdk.internal.transport.dto.DeliveryFailureDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
@@ -47,7 +47,6 @@ internal class DialogImpl(
     private var currentMembers: List<Participant> = members
     private var states: List<ParticipantState> =
         snapshot.readStates.mapNotNull { it.toDomain(members) }
-    private var exceptions: List<DeliveryException> = emptyList()
     private var unread: Int = snapshot.unreadCount ?: 0
 
     override val subject: String
@@ -65,9 +64,6 @@ internal class DialogImpl(
 
     override val participantStates: List<ParticipantState>
         get() = synchronized(lock) { states }
-
-    override val deliveryExceptions: List<DeliveryException>
-        get() = synchronized(lock) { exceptions }
 
 
     override fun sendMessage(
@@ -318,6 +314,20 @@ internal class DialogImpl(
     }
 
 
+    /** Adds or replaces the member's failure on the last message, if it is the failed one. */
+    internal fun applyDeliveryFailure(messageId: String, failure: DeliveryFailureDto) {
+        synchronized(lock) {
+            val last = snapshot.lastMessage ?: return
+            if (last.id != messageId) return
+
+            val failures = last.failures.filterNot { it.member.id == failure.member.id } + failure
+            snapshot = snapshot.copy(
+                lastMessage = last.copy(failures = failures)
+            )
+        }
+    }
+
+
     internal fun applyDeletion(messageId: String) {
         synchronized(lock) {
             val last = snapshot.lastMessage ?: return
@@ -367,12 +377,19 @@ internal class DialogImpl(
 
     internal fun applyEdit(message: MessageDto): MessageDto {
         synchronized(lock) {
-            if (snapshot.lastMessage?.id == message.id) {
-                snapshot = snapshot.copy(lastMessage = message)
-            }
-        }
+            val last = snapshot.lastMessage
+            if (last?.id != message.id) return message
 
-        return message
+            // Keep known failures when the edit payload omits them
+            val merged = if (message.failures.isEmpty()) {
+                message.copy(failures = last.failures)
+            } else {
+                message
+            }
+
+            snapshot = snapshot.copy(lastMessage = merged)
+            return merged
+        }
     }
 
 

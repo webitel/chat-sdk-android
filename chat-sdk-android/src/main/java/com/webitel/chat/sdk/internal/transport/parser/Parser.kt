@@ -11,6 +11,8 @@ import com.webitel.chat.sdk.MessageContent
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
+import com.webitel.chat.sdk.internal.transport.dto.DeliveryErrorDto
+import com.webitel.chat.sdk.internal.transport.dto.DeliveryFailureDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MemberChangeDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDeletedEventDto
@@ -78,8 +80,46 @@ internal class Parser {
             reactions = reactions,
             replyTo = replyTo,
             forwardOrigin = forwardOrigin,
-            sequence = messageObj.flexibleLongOrNull("seq")
+            sequence = messageObj.flexibleLongOrNull("seq"),
+            failures = parseFailuresArray(messageObj.optJSONArray("failures"))
         )
+    }
+
+
+    /** Skips malformed items, so one bad item does not drop the list. */
+    private fun parseFailuresArray(array: JSONArray?): List<DeliveryFailureDto> =
+        buildList {
+            if (array == null) return@buildList
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                parseFailure(obj)?.let(::add)
+            }
+        }
+
+
+    private fun parseFailure(obj: JSONObject): DeliveryFailureDto? {
+        val member = parseParticipant(obj.optJSONObject("member")) ?: return null
+        val error = parseDeliveryError(obj.optJSONObject("error")) ?: return null
+
+        return DeliveryFailureDto(member = member, error = error)
+    }
+
+
+    /** Reads `code` sent either as a string or a number. */
+    private fun parseDeliveryError(obj: JSONObject?): DeliveryErrorDto? {
+        obj ?: return null
+
+        val code = when (val value = obj.opt("code")) {
+            is String -> value
+            is Number -> value.toLong().toString()
+            else -> null
+        }
+        if (code.isNullOrEmpty()) return null
+
+        val message = obj.optString("message").takeIf { obj.has("message") && !obj.isNull("message") }
+
+        return DeliveryErrorDto(code = code, message = message)
     }
 
 
@@ -303,13 +343,15 @@ internal class Parser {
             obj.optJSONObject("member")
         ) ?: return null
 
-        val upToSeq = obj.flexibleLongOrNull("up_to_seq") ?: return null
-
         return MessageStatusEventDto(
             dialogId = dialogId,
             status = status,
             member = member,
-            upToSeq = upToSeq,
+            upToSeq = obj.flexibleLongOrNull("up_to_seq"),
+            // optString() returns "null" for an explicit JSON null on Android
+            messageId = obj.optString("message_id")
+                .takeIf { it.isNotEmpty() && !obj.isNull("message_id") },
+            error = parseDeliveryError(obj.optJSONObject("error")),
             occurredAt = obj.flexibleLongOrNull("occurred_at"),
             unreadCount = obj.unreadCountOrNull()
         )
