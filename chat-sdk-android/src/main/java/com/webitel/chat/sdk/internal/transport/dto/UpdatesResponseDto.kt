@@ -15,10 +15,17 @@ internal data class ThreadUpdatesDto(
     val unreadCount: Int?,
     val messages: List<MessageDto>,
     val topMessage: MessageDto?,
-    val deletedMessageIds: List<String>,
+    val deletedMessages: List<DeletedMessageDto>,
     val readStates: List<ReadStateDto>,
     val memberChanges: List<MemberChangeDto>,
     val left: Boolean
+)
+
+
+internal data class DeletedMessageDto(
+    val id: String,
+    val deletedAt: Long,
+    val deletedBy: ParticipantDto
 )
 
 

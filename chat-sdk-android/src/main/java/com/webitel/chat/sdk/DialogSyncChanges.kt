@@ -20,8 +20,13 @@ data class DialogSyncChanges(
      */
     val messages: List<Message>,
 
-    /** Messages that should be removed from local state. */
-    val deletedMessageIds: List<String>,
+    /**
+     * Messages deleted while the client was out of sync: who deleted each one
+     * and when, keyed by message id.
+     *
+     * Apply it to the messages you have locally, e.g. by setting [Message.deletion].
+     */
+    val deletedMessages: Map<String, MessageDeletion>,
 
     /**
      * Current delivery/read horizons for affected participants.

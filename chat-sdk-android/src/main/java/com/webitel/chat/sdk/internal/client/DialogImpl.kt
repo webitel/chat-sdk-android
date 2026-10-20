@@ -22,10 +22,12 @@ import com.webitel.chat.sdk.ParticipantState
 import com.webitel.chat.sdk.ReactionResult
 import com.webitel.chat.sdk.TypingRequest
 import com.webitel.chat.sdk.internal.extensions.toDomain
+import com.webitel.chat.sdk.internal.transport.dto.DeletedMessageDto
 import com.webitel.chat.sdk.internal.transport.dto.DeliveryFailureDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MessageReactionDto
+import com.webitel.chat.sdk.internal.transport.dto.ParticipantDto
 import com.webitel.chat.sdk.internal.transport.dto.ReadPosition
 import com.webitel.chat.sdk.internal.transport.dto.ReceiptKind
 
@@ -328,38 +330,49 @@ internal class DialogImpl(
     }
 
 
-    internal fun applyDeletion(messageId: String) {
+    internal fun applyDeletion(messageId: String, deletedBy: ParticipantDto, deletedAt: Long) {
         synchronized(lock) {
             val last = snapshot.lastMessage ?: return
             if (last.id != messageId) return
 
-            snapshot = snapshot.copy(lastMessage = null)
+            snapshot = snapshot.copy(
+                lastMessage = last.markedDeleted(deletedBy, deletedAt)
+            )
         }
     }
 
 
+    /**
+     * @param deletedMessages Deleted messages keyed by message id.
+     */
     internal fun applySync(
         lastMessage: MessageDto?,
-        deletedMessageIds: List<String>,
+        deletedMessages: Map<String, DeletedMessageDto>,
         unreadCount: Int?
     ) {
         synchronized(lock) {
             unreadCount?.let { unread = it }
 
-            val current = snapshot.lastMessage
+            // Kept in place and marked, as on `MessageEvent.Deleted`. An older
+            // top message (the previous active one) does not replace it below
+            val current = snapshot.lastMessage?.markedDeletedIn(deletedMessages)
+            snapshot = snapshot.copy(lastMessage = current)
 
-            if (current != null && current.id in deletedMessageIds) {
-                snapshot = snapshot.copy(lastMessage = null)
-            }
+            if (lastMessage == null) return
+            if (current != null && isNewer(current, lastMessage)) return
 
-            if (lastMessage == null || lastMessage.id in deletedMessageIds) return
-
-            val latest = snapshot.lastMessage
-            if (latest != null && isNewer(latest, lastMessage)) return
-
-            snapshot = snapshot.copy(lastMessage = lastMessage)
+            // The top message may itself be listed as deleted without the flag set
+            snapshot = snapshot.copy(lastMessage = lastMessage.markedDeletedIn(deletedMessages))
         }
     }
+
+
+    private fun MessageDto.markedDeleted(deletedBy: ParticipantDto, deletedAt: Long): MessageDto =
+        copy(isDeleted = true, deletedBy = deletedBy, deletedAt = deletedAt)
+
+
+    private fun MessageDto.markedDeletedIn(deletedMessages: Map<String, DeletedMessageDto>): MessageDto =
+        deletedMessages[id]?.let { markedDeleted(it.deletedBy, it.deletedAt) } ?: this
 
 
     /** Compares by sequence when both have it, by creation time otherwise. */

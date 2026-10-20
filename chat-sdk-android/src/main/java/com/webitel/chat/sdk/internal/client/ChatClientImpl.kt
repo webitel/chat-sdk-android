@@ -575,13 +575,14 @@ internal class ChatClientImpl(
 
             override fun onMessageDeleted(event: MessageDeletedEventDto, cursor: String?) {
                 synchronizer.submit(cursor) {
-                    dialogFactory.get(event.dialogId)?.applyDeletion(event.messageId)
+                    dialogFactory.get(event.dialogId)
+                        ?.applyDeletion(event.messageId, event.deletedBy, event.deletedAt)
 
                     hub.dispatch(
                         MessageEvent.Deleted(
                             dialogId = event.dialogId,
+                            messageId = event.messageId,
                             deletion = MessageDeletion(
-                                messageId = event.messageId,
                                 deletedBy = event.deletedBy.toDomain(),
                                 deletedAt = event.deletedAt
                             )
@@ -722,6 +723,9 @@ internal class ChatClientImpl(
             val messages = messageDtos.map { it.toDomain(currentUserId) }
             val memberChanges = thread.memberChanges.mapNotNull { it.toDomain() }
 
+            // A repeated id must not crash, the later entry wins
+            val deletedMessages = thread.deletedMessages.associateBy { it.id }
+
             val dialog: DialogImpl?
 
             if (thread.dialog != null) {
@@ -740,7 +744,7 @@ internal class ChatClientImpl(
                 dialog = dialogFactory.get(thread.threadId)
                 dialog?.applySync(
                     lastMessage = thread.topMessage ?: messageDtos.lastOrNull(),
-                    deletedMessageIds = thread.deletedMessageIds,
+                    deletedMessages = deletedMessages,
                     unreadCount = thread.unreadCount
                 )
 
@@ -761,7 +765,7 @@ internal class ChatClientImpl(
                 // Same value the dialog now holds
                 unreadCount = dialog?.unreadCount ?: thread.unreadCount ?: 0,
                 messages = messages,
-                deletedMessageIds = thread.deletedMessageIds,
+                deletedMessages = deletedMessages.mapValues { it.value.toDomain() },
                 participantStates = participantStates,
                 memberChanges = memberChanges,
                 hasLeft = thread.left

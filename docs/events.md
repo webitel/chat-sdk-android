@@ -67,6 +67,7 @@ sealed class MessageEvent : ChatEvent {
     /** Emitted when a message is deleted. */
     data class Deleted(
         override val dialogId: String,
+        val messageId: String,
         val deletion: MessageDeletion,
     ) : MessageEvent()
 
@@ -198,8 +199,11 @@ data class DialogSyncChanges(
     val unreadCount: Int,
     /** Changed messages, sorted by `sequence`. Upsert by `id`. */
     val messages: List<Message>,
-    /** Messages to remove from local state. */
-    val deletedMessageIds: List<String>,
+    /**
+     * Who deleted each message and when, keyed by message id.
+     * Apply it to the messages you have locally.
+     */
+    val deletedMessages: Map<String, MessageDeletion>,
     /**
      * Current delivery/read horizons; compare with `Message.sequence`.
      * Same merged values as `Dialog.participantStates`.
@@ -213,7 +217,7 @@ data class DialogSyncChanges(
 
 Delivery failures come inside `messages` (`Message.deliveryExceptions`) — upserting the message applies them.
 
-The dialog's cached `lastMessage`, `unreadCount`, `members` and `participantStates` are updated automatically. Recovered horizons are merged with the ones received in realtime and never move back.
+The dialog's cached `lastMessage`, `unreadCount`, `members` and `participantStates` are updated automatically. A deleted `lastMessage` stays in place, marked as deleted, as on `MessageEvent.Deleted` — until a newer message arrives. Recovered horizons are merged with the ones received in realtime and never move back.
 
 Dialogs created while offline are announced first, so they are handled by the same code as realtime `Created`:
 
@@ -280,7 +284,7 @@ override fun onEvent(event: ChatEvent) {
             // replace the local message with event.message
         }
         is MessageEvent.Deleted -> {
-            // remove or mark event.deletion.messageId as deleted
+            // mark event.messageId as deleted with event.deletion
         }
         is MessageEvent.ReactionsChanged -> {
             // update reactions on the message

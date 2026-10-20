@@ -15,4 +15,7 @@ internal data class MessageDto(
     val forwardOrigin: MessageForwardOriginDto? = null,
     val sequence: Long? = null,
     val failures: List<DeliveryFailureDto> = emptyList(),
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null,
+    val deletedBy: ParticipantDto? = null,
 )

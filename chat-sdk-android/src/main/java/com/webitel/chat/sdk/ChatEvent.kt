@@ -81,22 +81,25 @@ sealed class MessageEvent : ChatEvent {
     /**
      * Emitted when a message was deleted.
      *
-     * Carries who deleted the message and when, in addition to its
-     * identifier. Clients may:
-     * - remove the message from UI
-     * - or replace it with a "Message deleted" placeholder
+     * Carries the deleted message identifier, who deleted it and when.
+     * Deleted messages stay in the history (see [Message.deletion]), so
+     * clients typically mark the local message as deleted, e.g. show
+     * a "Message deleted" placeholder.
      *
      * Example usage:
      * ```
      * when (event) {
      *     is MessageEvent.Deleted -> {
-     *         messagesAdapter.remove(event.deletion.messageId)
+     *         messagesAdapter.update(event.messageId) {
+     *             it.copy(deletion = event.deletion)
+     *         }
      *     }
      * }
      * ```
      */
     data class Deleted(
         override val dialogId: String,
+        val messageId: String,
         val deletion: MessageDeletion,
     ) : MessageEvent()
 
@@ -160,7 +163,9 @@ sealed class DialogEvent : ChatEvent {
      * when (event) {
      *     is DialogEvent.Synchronized -> {
      *         messagesAdapter.upsert(event.changes.messages)
-     *         messagesAdapter.remove(event.changes.deletedMessageIds)
+     *         event.changes.deletedMessages.forEach { (id, deletion) ->
+     *             messagesAdapter.update(id) { it.copy(deletion = deletion) }
+     *         }
      *     }
      * }
      * ```

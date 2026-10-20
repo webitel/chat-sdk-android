@@ -2,17 +2,12 @@ package com.webitel.chat.sdk
 
 
 /**
- * Describes a single message deletion event.
+ * Who deleted a message and when.
  *
- * Delivered as part of [MessageEvent.Deleted] and carries who deleted the
- * message and when, in addition to its identifier.
+ * Set on [Message.deletion] for deleted messages and delivered as part of
+ * [MessageEvent.Deleted] and [DialogSyncChanges.deletedMessages].
  */
 data class MessageDeletion(
-
-    /**
-     * Identifier of the deleted message.
-     */
-    val messageId: String,
 
     /**
      * Participant who deleted the message.

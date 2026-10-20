@@ -11,6 +11,7 @@ import com.webitel.chat.sdk.MessageContent
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
 import com.webitel.chat.sdk.internal.extensions.toDomain
 import com.webitel.chat.sdk.internal.transport.dto.ContactDto
+import com.webitel.chat.sdk.internal.transport.dto.DeletedMessageDto
 import com.webitel.chat.sdk.internal.transport.dto.DeliveryErrorDto
 import com.webitel.chat.sdk.internal.transport.dto.DeliveryFailureDto
 import com.webitel.chat.sdk.internal.transport.dto.DialogDto
@@ -65,7 +66,12 @@ internal class Parser {
             .takeIf { messageObj.has("edited_at") }
         val sendId = messageObj.optString("send_id").takeIf { it.isNotEmpty() }
 
-        val content = parseContent(messageObj) ?: return null
+        val isDeleted = messageObj.optBoolean("deleted")
+
+        // Deleted messages come with empty content but stay in the history
+        val content = parseContent(messageObj)
+            ?: MessageContent.Text("").takeIf { isDeleted }
+            ?: return null
         val reactions = parseReactionsArray(messageObj.optJSONArray("reactions"))
         val replyTo = parseReplyTo(messageObj.optJSONObject("reply_to"))
         val forwardOrigin = parseForwardOrigin(messageObj.optJSONObject("forward_origin"))
@@ -81,7 +87,10 @@ internal class Parser {
             replyTo = replyTo,
             forwardOrigin = forwardOrigin,
             sequence = messageObj.flexibleLongOrNull("seq"),
-            failures = parseFailuresArray(messageObj.optJSONArray("failures"))
+            failures = parseFailuresArray(messageObj.optJSONArray("failures")),
+            isDeleted = isDeleted,
+            deletedAt = messageObj.flexibleLongOrNull("deleted_at"),
+            deletedBy = parseParticipant(messageObj.optJSONObject("deleted_by"))
         )
     }
 
@@ -244,7 +253,7 @@ internal class Parser {
             obj.optJSONObject("deleted_by")
         ) ?: return null
 
-        val deletedAt = obj.optLong("deleted_at")
+        val deletedAt = obj.flexibleLongOrNull("deleted_at") ?: 0L
 
         return MessageDeletedEventDto(
             dialogId = dialogId,
@@ -407,11 +416,18 @@ internal class Parser {
             }
         }
 
-        val deletedMessageIds = buildList {
-            val array = obj.optJSONArray("deleted_message_ids") ?: return@buildList
+        val deletedMessages = buildList {
+            val array = obj.optJSONArray("deleted_messages") ?: return@buildList
 
             for (i in 0 until array.length()) {
-                array.optString(i).takeIf { it.isNotEmpty() }?.let(::add)
+                val deleted = parseDeletedMessage(array.optJSONObject(i))
+
+                if (deleted == null) {
+                    logger.warn(TAG, "Failed to parse deleted message in thread $threadId")
+                    continue
+                }
+
+                add(deleted)
             }
         }
 
@@ -430,10 +446,25 @@ internal class Parser {
             unreadCount = obj.unreadCountOrNull(),
             messages = messages,
             topMessage = parseMessage(obj.optJSONObject("top_message"), fallbackDialogId = threadId),
-            deletedMessageIds = deletedMessageIds,
+            deletedMessages = deletedMessages,
             readStates = parseReadStates(obj.optJSONArray("read_states")),
             memberChanges = memberChanges,
             left = obj.optBoolean("left")
+        )
+    }
+
+
+    private fun parseDeletedMessage(obj: JSONObject?): DeletedMessageDto? {
+        obj ?: return null
+
+        val id = obj.optString("id").takeIf { it.isNotEmpty() } ?: return null
+        val deletedBy = parseParticipant(obj.optJSONObject("deleted_by")) ?: return null
+        val deletedAt = obj.flexibleLongOrNull("deleted_at") ?: 0L
+
+        return DeletedMessageDto(
+            id = id,
+            deletedAt = deletedAt,
+            deletedBy = deletedBy
         )
     }
 

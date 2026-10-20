@@ -2,9 +2,11 @@ package com.webitel.chat.sdk.internal.extensions
 
 import com.webitel.chat.sdk.MemberChange
 import com.webitel.chat.sdk.MemberChangeAction
+import com.webitel.chat.sdk.MessageDeletion
 import com.webitel.chat.sdk.Participant
 import com.webitel.chat.sdk.ParticipantState
 import com.webitel.chat.sdk.internal.client.ChatClientImpl.Companion.logger
+import com.webitel.chat.sdk.internal.transport.dto.DeletedMessageDto
 import com.webitel.chat.sdk.internal.transport.dto.MemberChangeDto
 import com.webitel.chat.sdk.internal.transport.dto.ReadStateDto
 
@@ -30,6 +32,13 @@ internal fun ReadStateDto.toDomain(members: List<Participant> = emptyList()): Pa
         readUpToSequence = readUpToSeq
     )
 }
+
+
+internal fun DeletedMessageDto.toDomain(): MessageDeletion =
+    MessageDeletion(
+        deletedBy = deletedBy.toDomain(),
+        deletedAt = deletedAt
+    )
 
 
 internal fun MemberChangeDto.toDomain(): MemberChange? {

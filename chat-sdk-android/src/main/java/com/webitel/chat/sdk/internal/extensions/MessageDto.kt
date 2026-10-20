@@ -1,6 +1,7 @@
 package com.webitel.chat.sdk.internal.extensions
 
 import com.webitel.chat.sdk.Message
+import com.webitel.chat.sdk.MessageDeletion
 import com.webitel.chat.sdk.MessageForwardOrigin
 import com.webitel.chat.sdk.MessageForwardOriginKind
 import com.webitel.chat.sdk.MessageReaction
@@ -19,6 +20,17 @@ internal fun MessageDto.toDomain(
 
     val isOutgoing = from.contact.id.sub == currentUserId
 
+    // Deleted messages stay in the history; fall back to the sender
+    // and the last change time if the server omits deletion details
+    val deletion = if (isDeleted) {
+        MessageDeletion(
+            deletedBy = deletedBy?.toDomain() ?: from,
+            deletedAt = deletedAt ?: editedAt ?: createdAt
+        )
+    } else {
+        null
+    }
+
     return Message(
         id = id,
         dialogId = dialogId,
@@ -32,7 +44,8 @@ internal fun MessageDto.toDomain(
         reply = replyTo?.toDomain(),
         forwardOrigin = forwardOrigin?.toDomain(),
         sequence = sequence,
-        deliveryExceptions = failures.map { it.toDomain(id) }
+        deliveryExceptions = failures.map { it.toDomain(id) },
+        deletion = deletion
     )
 }
 

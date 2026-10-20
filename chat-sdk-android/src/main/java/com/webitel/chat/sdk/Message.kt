@@ -93,12 +93,28 @@ data class Message(
      *
      * See [ReceiptEvent.DeliveryFailed] for failures received in realtime.
      */
-    val deliveryExceptions: List<DeliveryException> = emptyList()
+    val deliveryExceptions: List<DeliveryException> = emptyList(),
+
+    /**
+     * Who deleted the message and when, or `null` if the message is not deleted.
+     *
+     * Deleted messages stay in the history. See [MessageEvent.Deleted] for
+     * deletions received in realtime.
+     */
+    val deletion: MessageDeletion? = null
 ) {
 
     /**
      * Indicates whether the message was edited after creation.
+     *
+     * Always `false` for deleted messages, since deletion also bumps [editedAt].
      */
     val isEdited: Boolean
-        get() = editedAt != null && editedAt > createdAt
+        get() = !isDeleted && editedAt != null && editedAt > createdAt
+
+    /**
+     * Indicates whether the message was deleted.
+     */
+    val isDeleted: Boolean
+        get() = deletion != null
 }

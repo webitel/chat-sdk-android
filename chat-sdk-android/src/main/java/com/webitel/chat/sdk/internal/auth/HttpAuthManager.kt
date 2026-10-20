@@ -347,6 +347,7 @@ internal class HttpAuthManager(
             notifyUpdate(token)
             Result.success(Unit)
         } else {
+            headerProvider.updateAccessToken(null)
             Result.failure(inspect.exceptionOrNull()!!.toChatError())
         }
     }

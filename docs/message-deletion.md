@@ -87,27 +87,41 @@ enum class SkippedMessageReason(val value: String) {
 
 ## Receiving Deletion Updates
 
-A realtime `MessageEvent.Deleted` is dispatched when a message is deleted — including deletions made by another participant — carrying who deleted it and when:
+Deletion is soft: deleted messages are not removed from the history — they come back from `getHistory` with `Message.deletion` describing who deleted them and when (`Message.isDeleted == true`). Their content is empty, and `isEdited` is always `false` for them.
 
 ```kotlin
-data class Deleted(
-    override val dialogId: String,
-    val deletion: MessageDeletion,
-) : MessageEvent()
+data class Message(
+    // ...
+    /** Who deleted the message and when, `null` if the message is not deleted. */
+    val deletion: MessageDeletion? = null
+) {
+    val isDeleted: Boolean
+}
 
 data class MessageDeletion(
-    val messageId: String,
     val deletedBy: Participant,
     val deletedAt: Long,
 )
 ```
 
+A realtime `MessageEvent.Deleted` is dispatched when a message is deleted — including deletions made by another participant — carrying the message id, who deleted it and when:
+
+```kotlin
+data class Deleted(
+    override val dialogId: String,
+    val messageId: String,
+    val deletion: MessageDeletion,
+) : MessageEvent()
+```
+
+If the message is cached locally, the deletion can be applied to it:
+
 ```kotlin
 override fun onEvent(event: ChatEvent) {
     when (event) {
         is MessageEvent.Deleted -> {
-            // remove event.deletion.messageId from the local message list,
-            // or replace it with a "Message deleted" placeholder
+            val message = messages[event.messageId] ?: return
+            messages[event.messageId] = message.copy(deletion = event.deletion)
         }
         else -> Unit
     }
@@ -116,4 +130,6 @@ override fun onEvent(event: ChatEvent) {
 
 See [Events](events.md) for how to register a listener.
 
-The dialog's cached `lastMessage` is cleared automatically if it was the deleted message. The SDK does not keep a full local history — for other messages (e.g. items already loaded via `getHistory`), the client is responsible for applying `MessageEvent.Deleted` to its own local state.
+Deletions missed while offline come in `DialogSyncChanges.deletedMessages` (keyed by message id) — see [Synchronization](events.md#synchronization).
+
+The dialog's cached `lastMessage` is marked as deleted automatically if it was the deleted message. The SDK does not keep a full local history — for other messages (e.g. items already loaded via `getHistory`), the client is responsible for applying `MessageEvent.Deleted` to its own local state.
