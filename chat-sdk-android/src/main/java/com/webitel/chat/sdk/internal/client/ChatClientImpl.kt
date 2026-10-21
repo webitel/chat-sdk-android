@@ -69,8 +69,12 @@ internal class ChatClientImpl(
     private val fileDownloader: HttpFileDownloader,
     private val hub: RealtimeHub,
     private val execution: ExecutionContext): ChatClient, UpdatesSynchronizerDelegate {
+    // Accessed from the caller, realtime, auth and backoff timer threads
+    @Volatile
     private var retryAttempt = 0
+    @Volatile
     private var realtimeEnabled = false
+    @Volatile
     private var backoffTask: TimerTask? = null
 
     private val dialogFactory = DialogFactory(
@@ -349,7 +353,7 @@ internal class ChatClientImpl(
 
         authManager.ensureAuthValid { authResult ->
             authResult.fold(
-                onSuccess = { realtime.connect() },
+                onSuccess = { connectIfEnabled() },
                 onFailure = { error ->
                     if (error is ChatError.Unauthorized) {
                         handleUnauthorized(
@@ -357,7 +361,7 @@ internal class ChatClientImpl(
                             retry = {
                                 authManager.refresh { authRefresh ->
                                     authRefresh.fold(
-                                        onSuccess = { realtime.connect() },
+                                        onSuccess = { connectIfEnabled() },
                                         onFailure = { failRealtime(it.toChatError()) }
                                     )
                                 }
@@ -380,6 +384,8 @@ internal class ChatClientImpl(
         backoffTask = null
         retryAttempt = 0
         realtime.disconnect()
+        // The transport ignores callbacks of a socket it closed, so onClosed won't publish it
+        hub.updateState(ConnectionState.Disconnected)
     }
 
 
@@ -634,8 +640,15 @@ internal class ChatClientImpl(
             }
 
             override fun onOpen() {
+                // Opened after disconnect() (a late auth or backoff connect):
+                // close it, otherwise the next connect() is swallowed by the open socket
+                if (!realtimeEnabled) {
+                    realtime.disconnect()
+                    return
+                }
+
                 retryAttempt = 0
-                hub.updateState(
+                publishWhileEnabled(
                     ConnectionState.Connected
                 )
             }
@@ -782,6 +795,8 @@ internal class ChatClientImpl(
 
 
     private fun failRealtime(error: ChatError) {
+        // Disconnected meanwhile (e.g. auth failed after disconnect()): keep Disconnected
+        if (!realtimeEnabled) return
         realtimeEnabled = false
 
         logger.error(
@@ -790,6 +805,20 @@ internal class ChatClientImpl(
         )
 
         hub.updateState(ConnectionState.Failed(error))
+    }
+
+
+    // Auth may complete after disconnect(): the socket must not be opened then
+    private fun connectIfEnabled() {
+        if (realtimeEnabled) realtime.connect()
+    }
+
+
+    // disconnect() may run between a realtimeEnabled check and the publish:
+    // the state must still end up Disconnected then
+    private fun publishWhileEnabled(state: ConnectionState) {
+        hub.updateState(state)
+        if (!realtimeEnabled) hub.updateState(ConnectionState.Disconnected)
     }
 
 
@@ -806,6 +835,7 @@ internal class ChatClientImpl(
 
 
     private fun closeRealtime(code: Int, reason: String) {
+        if (!realtimeEnabled) return
         logger.error(TAG, "onClosed: close realtime")
 
         realtimeEnabled = false
@@ -818,6 +848,9 @@ internal class ChatClientImpl(
 
 
     private fun tryConnect() {
+        // Disconnected meanwhile: must not publish Reconnecting or schedule a new backoff
+        if (!realtimeEnabled) return
+
         if (backoffTask != null) {
             logger.debug("ChatClientImpl",
                 "connect: backoffTask is active"
@@ -830,7 +863,7 @@ internal class ChatClientImpl(
             "connect: retry open connection. Attempt $retryAttempt"
         )
 
-        hub.updateState(
+        publishWhileEnabled(
             ConnectionState.Reconnecting(retryAttempt,
                 clientContext.networkConfig.realtime.maxRetries
             )
@@ -842,7 +875,8 @@ internal class ChatClientImpl(
         )
         backoffTask = Timer().schedule(delay) {
             backoffTask = null
-            realtime.connect()
+            // Fired after disconnect(): the socket must not be opened then
+            if (realtimeEnabled) realtime.connect()
         }
     }
 

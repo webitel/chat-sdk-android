@@ -23,10 +23,14 @@ internal class WssRealtimeTransport(
     private val execution: ExecutionContext,
     private val headerProvider: HeaderProvider
 ):  WebSocketListener(), RealtimeTransport {
+    @Volatile
     override var connectionState: ConnectionState = ConnectionState.Disconnected
         private set
 
     private var realtimeListener: RealtimeListener? = null
+
+    // The current socket, accessed only on the realtime queue;
+    // callbacks of any other (closed) socket are ignored
     private var socket: WebSocket? = null
 
     private val parser = Parser()
@@ -38,7 +42,7 @@ internal class WssRealtimeTransport(
             .pingInterval(clientContext.networkConfig.realtime.pingIntervalMs,
                 TimeUnit.MILLISECONDS)
             .callTimeout(clientContext.networkConfig.api.callTimeoutMs,
-                TimeUnit.SECONDS)
+                TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
             .addInterceptor(HeaderInterceptor(headerProvider))
 
@@ -75,23 +79,41 @@ internal class WssRealtimeTransport(
     }
 
 
+    // OkHttp callbacks are moved to the realtime queue, where the socket is opened and closed:
+    // a callback is then never processed before `socket` is assigned in openStream,
+    // and the stale check can't race with closeSocket
+
     override fun onOpen(webSocket: WebSocket, response: Response) {
-        logger.debug(TAG, "onOpen: Connected to WebSocket server")
-        connectionState = ConnectionState.Connected
-        realtimeListener?.onOpen()
+        execution.realtime {
+            if (isStale(webSocket, "onOpen")) return@realtime
+            logger.debug(TAG, "onOpen: Connected to WebSocket server")
+            connectionState = ConnectionState.Connected
+            realtimeListener?.onOpen()
+        }
+    }
+
+
+    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+        logger.debug(TAG, "onClosing: $code, $reason")
+        // Completes the close handshake initiated by the server,
+        // otherwise OkHttp never delivers onClosed
+        webSocket.close(1000, null)
     }
 
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-        logger.warn(TAG, "onClosed: $code, $reason")
-        connectionState = ConnectionState.Disconnected
-        realtimeListener?.onClosed(code, reason)
+        execution.realtime {
+            if (isStale(webSocket, "onClosed")) return@realtime
+            logger.warn(TAG, "onClosed: $code, $reason")
+            socket = null
+            connectionState = ConnectionState.Disconnected
+            realtimeListener?.onClosed(code, reason)
+        }
     }
 
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        logger.warn(TAG, "onFailure: ${t}, $response")
-
+        // Read here: OkHttp closes the response once this callback returns
         val httpCode = response?.code
         val httpBody = response?.body?.let {
             try {
@@ -101,36 +123,45 @@ internal class WssRealtimeTransport(
             }
         }
 
-        val errorMessage = when {
-            httpCode != null -> "WebSocket HTTP error: $httpCode $httpBody"
-            t.message != null -> "WebSocket error: ${t.message}"
-            else -> "Unknown WebSocket error"
+        execution.realtime {
+            if (isStale(webSocket, "onFailure")) return@realtime
+            logger.warn(TAG, "onFailure: ${t}, $response")
+
+            val errorMessage = when {
+                httpCode != null -> "WebSocket HTTP error: $httpCode $httpBody"
+                t.message != null -> "WebSocket error: ${t.message}"
+                else -> "Unknown WebSocket error"
+            }
+
+            val error = ChatError.Companion.fromCode(
+                httpCode ?: ChatError.Companion.UNKNOWN_CODE,
+                errorMessage,
+                t
+            )
+
+            socket = null
+            connectionState = ConnectionState.Failed(error)
+            logger.debug(
+                TAG,
+                "onFailure: ConnectionState - ${connectionState}"
+            )
+
+            realtimeListener?.onError(error)
         }
-
-        val error = ChatError.Companion.fromCode(
-            httpCode ?: ChatError.Companion.UNKNOWN_CODE,
-            errorMessage,
-            t
-        )
-
-        connectionState = ConnectionState.Failed(error)
-        logger.debug(
-            TAG,
-            "onFailure: ConnectionState - ${connectionState}"
-        )
-
-        realtimeListener?.onError(error)
     }
 
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        // An exception escaping a listener makes OkHttp fail the socket:
-        // a malformed frame must be skipped, not cause a reconnect
-        try {
-            handleFrame(text)
-        } catch (t: Throwable) {
-            // The frame itself is not logged: it may contain message content
-            logger.error(TAG, "onMessage: failed to process frame, ignored: $t")
+        execution.realtime {
+            if (isStale(webSocket, "onMessage")) return@realtime
+
+            // A malformed frame must be skipped, not break the realtime queue
+            try {
+                handleFrame(text)
+            } catch (t: Throwable) {
+                // The frame itself is not logged: it may contain message content
+                logger.error(TAG, "onMessage: failed to process frame, ignored: $t")
+            }
         }
     }
 
@@ -178,13 +209,16 @@ internal class WssRealtimeTransport(
 
 
     fun onAuthUpdated(token: String) {
-        if (connectionState == ConnectionState.Connected) {
-            logger.debug(TAG, "send new auth in stream; $token")
-            socket?.send(JSONObject()
-                .put("x-webitel-access", token)
-                .put("x-webitel-client", clientContext.clientToken)
-                .toString()
-            )
+        // Called from the auth thread: `socket` is accessed only on the realtime queue
+        execution.realtime {
+            if (connectionState == ConnectionState.Connected) {
+                logger.debug(TAG, "send new auth in stream; $token")
+                socket?.send(JSONObject()
+                    .put("x-webitel-access", token)
+                    .put("x-webitel-client", clientContext.clientToken)
+                    .toString()
+                )
+            }
         }
     }
 
@@ -220,19 +254,48 @@ internal class WssRealtimeTransport(
         logger.debug(TAG, "handleDisconnected: $payload")
         val disconnectObj = payload.optJSONObject("disconnected_event")
 
-        val reason = disconnectObj?.optString("reason") ?: "unknown"
-        val code = disconnectObj?.optInt("code") ?: 1000
+        // Defaults also cover a missing field: optInt/optString would return 0/""
+        val reason = disconnectObj?.optString("reason", "unknown") ?: "unknown"
+        val code = disconnectObj?.optInt("code", 1000) ?: 1000
         closeStream(reason, code)
     }
 
 
     private fun closeStream(reason: String, code: Int) {
+        closeSocket(safeCloseCode(code), reason, code)
+    }
+
+
+    /**
+     * Closes the current socket and resets the state right away, without waiting
+     * for its onClosed: a following [openStream] must not be swallowed while the old
+     * socket is still closing. Callbacks of the closed socket are ignored from now on,
+     * so a server-initiated close notifies the listener with [notifyCode] here;
+     * a client-initiated close (null) is reported by the caller of [disconnect].
+     */
+    private fun closeSocket(closeCode: Int, reason: String, notifyCode: Int?) {
+        val current = socket ?: return
+        socket = null
+        connectionState = ConnectionState.Disconnected
+
         try {
-            socket?.close(
-                safeCloseCode(code),
-                reason
-            )
-        } catch (_: Exception) { }
+            current.close(closeCode, reason)
+        } catch (e: Exception) {
+            logger.error(TAG, "closeSocket: error " + e.message.toString())
+            // E.g. a server reason over 123 bytes: the socket must not stay open
+            current.cancel()
+        }
+
+        if (notifyCode != null) {
+            realtimeListener?.onClosed(notifyCode, reason)
+        }
+    }
+
+
+    private fun isStale(webSocket: WebSocket, callback: String): Boolean {
+        if (webSocket === socket) return false
+        logger.debug(TAG, "$callback: ignored, socket is stale")
+        return true
     }
 
 
@@ -398,11 +461,9 @@ internal class WssRealtimeTransport(
 
 
     private fun closeStream() {
-        try {
-            socket?.close(1000, "Client closed")
-        } catch (e: Exception) {
-            logger.error(TAG, "closeConnection: error" + e.message.toString())
-        }
+        closeSocket(1000, "Client closed", null)
+        // No socket to close (e.g. after a failure): still reset a Failed state
+        connectionState = ConnectionState.Disconnected
     }
 
 
